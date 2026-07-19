@@ -19,8 +19,14 @@ from telegram.sender import (
 
 
 async def monitor_trades():
+    """
+    Monitor all active trades and update their lifecycle.
+    """
 
     trades = get_active_trades()
+
+    if not trades:
+        return
 
     for trade in trades:
 
@@ -32,13 +38,17 @@ async def monitor_trades():
 
             price = float(df["close"].iloc[-1])
 
-            # ===============================
-            # BUY TRADE
-            # ===============================
+            # ==========================================
+            # BUY TRADES
+            # ==========================================
 
             if trade["side"] == "BUY":
 
-                if not trade["entry_hit"] and price <= trade["entry"]:
+                # Entry Filled
+                if (
+                    not trade["entry_hit"]
+                    and price <= trade["entry"]
+                ):
 
                     update_trade(
                         trade["id"],
@@ -50,10 +60,11 @@ async def monitor_trades():
                         trade["side"]
                     )
 
+                # TP1
                 elif (
                     trade["entry_hit"]
                     and not trade["tp1_hit"]
-                    and price >= trade["take_profit"]
+                    and price >= trade["tp1"]
                 ):
 
                     update_trade(
@@ -69,10 +80,11 @@ async def monitor_trades():
                         trade["rr"]
                     )
 
+                # TP2
                 elif (
                     trade["tp1_hit"]
                     and not trade["tp2_hit"]
-                    and price >= trade["take_profit"] * 1.01
+                    and price >= trade["tp2"]
                 ):
 
                     update_trade(
@@ -88,6 +100,7 @@ async def monitor_trades():
                         trade["rr"]
                     )
 
+                # Stop Loss
                 elif (
                     trade["entry_hit"]
                     and not trade["sl_hit"]
@@ -105,13 +118,17 @@ async def monitor_trades():
                         trade["side"]
                     )
 
-            # ===============================
-            # SELL TRADE
-            # ===============================
+            # ==========================================
+            # SELL TRADES
+            # ==========================================
 
             else:
 
-                if not trade["entry_hit"] and price >= trade["entry"]:
+                # Entry Filled
+                if (
+                    not trade["entry_hit"]
+                    and price >= trade["entry"]
+                ):
 
                     update_trade(
                         trade["id"],
@@ -123,10 +140,11 @@ async def monitor_trades():
                         trade["side"]
                     )
 
+                # TP1
                 elif (
                     trade["entry_hit"]
                     and not trade["tp1_hit"]
-                    and price <= trade["take_profit"]
+                    and price <= trade["tp1"]
                 ):
 
                     update_trade(
@@ -142,10 +160,11 @@ async def monitor_trades():
                         trade["rr"]
                     )
 
+                # TP2
                 elif (
                     trade["tp1_hit"]
                     and not trade["tp2_hit"]
-                    and price <= trade["take_profit"] * 0.99
+                    and price <= trade["tp2"]
                 ):
 
                     update_trade(
@@ -161,6 +180,7 @@ async def monitor_trades():
                         trade["rr"]
                     )
 
+                # Stop Loss
                 elif (
                     trade["entry_hit"]
                     and not trade["sl_hit"]
@@ -180,4 +200,6 @@ async def monitor_trades():
 
         except Exception as e:
 
-            print(f"Trade Monitor Error ({trade['pair']}): {e}")
+            print(
+                f"Trade Monitor Error ({trade['pair']}): {e}"
+            )

@@ -33,7 +33,7 @@ from analysis.institutional_liquidity.institutional_liquidity_engine import (
 # Risk
 from analysis.risk.risk_engine import calculate_risk
 
-# Decision
+# Rule Engine
 from analysis.decision.decision_engine import make_decision
 
 # Confidence
@@ -42,32 +42,12 @@ from analysis.confidence.confidence_engine import calculate_confidence
 
 def generate_signal(symbol):
     """
-    Master Signal Workflow
-
-    Market Data
-        ↓
-    Weekly Bias
-        ↓
-    Daily Analysis
-        ↓
-    H4 Analysis
-        ↓
-    Entry Analysis
-        ↓
-    Liquidity
-        ↓
-    Risk
-        ↓
-    Rule Engine
-        ↓
-    Confidence Engine
-        ↓
-    Final Signal
+    Complete institutional signal workflow.
     """
 
-    # =====================================
+    # ==================================================
     # FETCH MARKET DATA
-    # =====================================
+    # ==================================================
 
     market = fetch_market_data(symbol)
 
@@ -76,29 +56,29 @@ def generate_signal(symbol):
     h4_df = market["4h"]
     m15_df = market["15m"]
 
-    # =====================================
-    # WEEKLY
-    # =====================================
+    # ==================================================
+    # WEEKLY ANALYSIS
+    # ==================================================
 
     weekly = detect_weekly_bias(weekly_df)
 
-    # =====================================
-    # DAILY
-    # =====================================
+    # ==================================================
+    # DAILY ANALYSIS
+    # ==================================================
 
     daily_structure = detect_daily_structure(daily_df)
     daily_bos = detect_daily_bos(daily_df)
 
-    # =====================================
-    # H4
-    # =====================================
+    # ==================================================
+    # H4 ANALYSIS
+    # ==================================================
 
     h4_structure = detect_h4_structure(h4_df)
     h4_bos = detect_h4_bos(h4_df)
 
-    # =====================================
-    # ENTRY COMPONENTS
-    # =====================================
+    # ==================================================
+    # ENTRY ANALYSIS
+    # ==================================================
 
     key_levels = detect_key_levels(m15_df)
 
@@ -120,15 +100,15 @@ def generate_signal(symbol):
         supply_demand,
     )
 
-    # =====================================
+    # ==================================================
     # LIQUIDITY
-    # =====================================
+    # ==================================================
 
     liquidity = detect_institutional_liquidity(m15_df)
 
-    # =====================================
-    # RISK
-    # =====================================
+    # ==================================================
+    # RISK MANAGEMENT
+    # ==================================================
 
     current_price = float(m15_df["close"].iloc[-1])
 
@@ -139,6 +119,9 @@ def generate_signal(symbol):
         .iloc[-1]
     )
 
+    if atr is None or atr != atr:
+        atr = current_price * 0.005
+
     risk = calculate_risk(
         entry=current_price,
         atr=atr,
@@ -146,9 +129,9 @@ def generate_signal(symbol):
         rr=3,
     )
 
-    # =====================================
+    # ==================================================
     # RULE ENGINE
-    # =====================================
+    # ==================================================
 
     decision = make_decision(
         weekly,
@@ -161,33 +144,39 @@ def generate_signal(symbol):
         risk,
     )
 
-    # =====================================
-    # CLEAN SCAN LOG
-    # =====================================
+    # ==================================================
+    # SCAN REPORT
+    # ==================================================
 
     print(f"""
-----------------------------------------
-{symbol}
+========================================================
+PAIR            : {symbol}
 
-Weekly Bias      : {weekly['bias']}
-Daily Trend      : {daily_structure['trend']}
-Daily BOS        : {daily_bos['bos']}
-H4 Trend         : {h4_structure['trend']}
-H4 BOS           : {h4_bos['bos']}
-Liquidity Sweep  : {liquidity['liquidity_grab']}
-Entry Trigger    : {entry['approved']}
-Risk Reward      : 1:{risk['rr']}
+Weekly Bias     : {weekly['bias']}
+Daily Trend     : {daily_structure['trend']}
+Daily BOS       : {daily_bos['bos']}
+H4 Trend        : {h4_structure['trend']}
+H4 BOS          : {h4_bos['bos']}
+Liquidity Sweep : {liquidity['liquidity_grab']}
+Entry Trigger   : {entry['approved']}
+Risk Reward     : 1:{risk['rr']}
 
-Approved         : {decision['approved']}
-----------------------------------------
+Approved        : {decision['approved']}
+Direction       : {decision['direction']}
+
+Reasons
+--------------------------------------------------------
+{chr(10).join('- ' + r for r in decision['reasons']) if decision['reasons'] else 'Trade Approved'}
+
+========================================================
 """)
 
     if not decision["approved"]:
         return None
 
-    # =====================================
+    # ==================================================
     # CONFIDENCE
-    # =====================================
+    # ==================================================
 
     confidence = calculate_confidence(
         weekly,
@@ -200,21 +189,34 @@ Approved         : {decision['approved']}
         risk,
     )
 
-    # =====================================
+    # ==================================================
     # FINAL SIGNAL
-    # =====================================
+    # ==================================================
 
-    return {
+    signal = {
+
         "pair": symbol,
+
         "side": decision["direction"],
+
         "entry": risk["entry"],
+
         "stop_loss": risk["stop_loss"],
+
         "tp1": risk["tp1"],
+
         "tp2": risk["tp2"],
-        "take_profit": [risk["tp1"], risk["tp2"]],
+
         "rr": risk["rr"],
+
         "confidence": confidence["score"],
+
         "grade": confidence["grade"],
+
         "score": confidence["score"],
+
         "reasons": confidence["reasons"],
+
     }
+
+    return signal
