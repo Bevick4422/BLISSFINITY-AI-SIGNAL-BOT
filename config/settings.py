@@ -1,6 +1,5 @@
-
 """
-BLISSFINITY AI SIGNAL BOT
+BLISSFINITY SIGNAL BOT
 CONFIGURATION
 """
 
@@ -17,102 +16,108 @@ TELEGRAM_CHAT_ID = "-1004459723300"
 # BOT SETTINGS
 # ==========================================================
 
-SCAN_INTERVAL = 60          # Scan every 60 seconds
-
-MIN_DAILY_SIGNALS = 3       # Target signals/day
-MAX_DAILY_SIGNALS = 4       # Hard daily limit
-
-MAX_PAIRS = 100             # Scan top 100 futures
+SCAN_INTERVAL = 60          # Seconds
+MIN_DAILY_SIGNALS = 3
+MAX_DAILY_SIGNALS = 4
+MAX_PAIRS = 100
 
 # ==========================================================
-# MEXC EXCHANGE
+# MEXC FUTURES
 # ==========================================================
 
-exchange = ccxt.mexc({
-    "enableRateLimit": True,
-    "options": {
-        "defaultType": "swap"
+exchange = ccxt.mexc(
+    {
+        "enableRateLimit": True,
+        "options": {
+            "defaultType": "swap",
+        },
     }
-})
+)
 
 # ==========================================================
-# LOAD TOP FUTURES PAIRS
+# LOAD CRYPTO FUTURES
 # ==========================================================
 
 def get_symbols():
+    """
+    Load the highest-volume MEXC USDT perpetual
+    cryptocurrency futures only.
+    """
+
+    print("Loading MEXC futures markets...")
 
     exchange.load_markets()
     tickers = exchange.fetch_tickers()
 
-    blacklist = (
-        "3L",
-        "3S",
-        "5L",
-        "5S",
-        "STOCK",
-        "XAU",
-        "XAUT",
-        "GOLD",
-        "SILVER",
-        "USOIL",
-        "BRENT",
-        "WTI",
-        "SPX",
-        "NASDAQ",
-        "DJI",
-        "USD1",
-        "EUR",
-        "GBP",
-        "JPY",
-    )
-
-    pairs = []
+    crypto_pairs = []
 
     for symbol, market in exchange.markets.items():
 
+        # Only active markets
         if not market.get("active", False):
             continue
 
+        # Only perpetual futures
         if not market.get("swap", False):
             continue
 
+        # USDT quoted only
         if market.get("quote") != "USDT":
             continue
 
-        if any(word in symbol.upper() for word in blacklist):
+        # Must have a crypto base asset
+        base = market.get("base")
+        if not base:
             continue
 
-        ticker = tickers.get(symbol)
+        # Skip leveraged tokens
+        if base.endswith(("3L", "3S", "5L", "5S")):
+            continue
 
+        # Ignore symbols with missing ticker data
+        ticker = tickers.get(symbol)
         if ticker is None:
             continue
 
-        volume = ticker.get("quoteVolume", 0) or 0
+        volume = ticker.get("quoteVolume") or 0
 
-        pairs.append((symbol, volume))
+        crypto_pairs.append(
+            (
+                symbol,
+                volume,
+            )
+        )
 
-    pairs.sort(
-        key=lambda x: x[1],
-        reverse=True
+    crypto_pairs.sort(
+        key=lambda item: item[1],
+        reverse=True,
     )
 
-    return [symbol for symbol, _ in pairs[:MAX_PAIRS]]
+    selected = [
+        symbol
+        for symbol, _ in crypto_pairs[:MAX_PAIRS]
+    ]
+
+    print(f"Loaded {len(selected)} crypto futures pairs.")
+
+    return selected
+
 
 # ==========================================================
-# SYMBOLS
+# SYMBOL LIST
 # ==========================================================
 
 SYMBOLS = get_symbols()
 
 # ==========================================================
-# STARTUP INFO
+# STARTUP
 # ==========================================================
 
 print("=" * 60)
-print("BLISSFINITY AI SIGNAL BOT")
+print("BLISSFINITY SIGNAL BOT")
 print("=" * 60)
-print(f"Loaded {len(SYMBOLS)} Futures Pairs")
-print(f"Scan Interval      : {SCAN_INTERVAL}s")
-print(f"Daily Signals      : {MIN_DAILY_SIGNALS}-{MAX_DAILY_SIGNALS}")
+print(f"Pairs Loaded       : {len(SYMBOLS)}")
 print(f"Pairs Scanned      : {MAX_PAIRS}")
+print(f"Scan Interval      : {SCAN_INTERVAL} seconds")
+print(f"Daily Signals      : {MIN_DAILY_SIGNALS}-{MAX_DAILY_SIGNALS}")
 print("=" * 60)
