@@ -3,15 +3,11 @@ BLISSFINITY SIGNAL BOT
 CONFIGURATION
 """
 
+import os
 import ccxt
 
-# ==========================================================
-# TELEGRAM
-# ==========================================================
-
-TELEGRAM_TOKEN = "8908134517:AAHVTOQdR0f01XDlZfOIvd9yiYNev_t7K-I"
-TELEGRAM_CHAT_ID = "-1004459723300"
-
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # ==========================================================
 # BOT SETTINGS
 # ==========================================================
