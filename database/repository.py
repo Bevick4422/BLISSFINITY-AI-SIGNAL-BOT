@@ -1,11 +1,16 @@
+
 """
 =====================================================
 BLISSFINITY AI SIGNAL BOT
-Database Repository
+SQLite Repository
 =====================================================
 """
 
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Any
+
 from database.database import get_connection
 
 
@@ -14,12 +19,12 @@ from database.database import get_connection
 # =====================================================
 
 def save_signal(
-    symbol,
-    direction,
-    setup,
-    entry_type,
-    confidence,
-):
+    symbol: str,
+    direction: str,
+    setup: str | None,
+    entry_type: str | None,
+    confidence: int | None,
+) -> int:
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -47,15 +52,19 @@ def save_signal(
         ),
     )
 
+    signal_id = cursor.lastrowid
+
     conn.commit()
     conn.close()
+
+    return signal_id
 
 
 # =====================================================
 # SAVE TRADE
 # =====================================================
 
-def save_trade(trade: dict):
+def save_trade(trade: dict) -> int:
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -97,50 +106,28 @@ def save_trade(trade: dict):
         ),
     )
 
+    trade_id = cursor.lastrowid
+
     conn.commit()
     conn.close()
 
-
-# =====================================================
-# GET ACTIVE TRADES
-# =====================================================
-
-def get_active_trades():
-
-    conn = get_connection()
-
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM trades
-        WHERE state != 'CLOSED'
-        """
-    )
-
-    rows = cursor.fetchall()
-
-    conn.close()
-
-    return [dict(row) for row in rows]
+    return trade_id
 
 
 # =====================================================
 # GET TRADE
 # =====================================================
 
-def get_trade(trade_id):
+def get_trade(trade_id: int) -> dict | None:
 
     conn = get_connection()
-
     cursor = conn.cursor()
 
     cursor.execute(
         """
         SELECT *
         FROM trades
-        WHERE id=?
+        WHERE id = ?
         """,
         (trade_id,),
     )
@@ -153,41 +140,116 @@ def get_trade(trade_id):
 
 
 # =====================================================
+# GET ACTIVE TRADES
+# =====================================================
+
+def get_active_trades() -> list[dict]:
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM trades
+        WHERE state IN ('PENDING', 'OPEN', 'TP1_HIT')
+        ORDER BY created_at ASC
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
+# =====================================================
+# GET ACTIVE TRADE
+# =====================================================
+
+def get_active_trade(
+    symbol: str,
+    direction: str,
+) -> dict | None:
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM trades
+        WHERE symbol = ?
+          AND direction = ?
+          AND state IN ('PENDING', 'OPEN', 'TP1_HIT')
+        LIMIT 1
+        """,
+        (
+            symbol,
+            direction,
+        ),
+    )
+
+    row = cursor.fetchone()
+
+    conn.close()
+
+    return dict(row) if row else None
+
+
+# =====================================================
+# DUPLICATE CHECK
+# =====================================================
+
+def trade_exists(
+    symbol: str,
+    direction: str,
+) -> bool:
+
+    return get_active_trade(symbol, direction) is not None
+
+
+# =====================================================
 # UPDATE TRADE
 # =====================================================
 
 def update_trade(
-    trade_id,
-    **fields,
-):
+    trade_id: int,
+    **fields: Any,
+) -> bool:
 
     if not fields:
-        return
+        return False
+
+    fields["updated_at"] = datetime.utcnow().isoformat()
 
     conn = get_connection()
-
     cursor = conn.cursor()
 
     columns = ", ".join(
-        f"{key}=?" for key in fields.keys()
+        f"{column} = ?"
+        for column in fields.keys()
     )
 
     values = list(fields.values())
-
     values.append(trade_id)
 
     cursor.execute(
         f"""
         UPDATE trades
         SET {columns}
-        WHERE id=?
+        WHERE id = ?
         """,
         values,
     )
 
-    conn.commit()
+    updated = cursor.rowcount > 0
 
+    conn.commit()
     conn.close()
+
+    return updated
 
 
 # =====================================================
@@ -195,15 +257,64 @@ def update_trade(
 # =====================================================
 
 def close_trade(
-    trade_id,
-    result,
-    rr,
-):
+    trade_id: int,
+    result: str,
+    rr: float,
+) -> bool:
 
-    update_trade(
+    return update_trade(
         trade_id,
         state="CLOSED",
         result=result,
         rr=rr,
         closed_at=datetime.utcnow().isoformat(),
     )
+
+
+# =====================================================
+# DELETE TRADE
+# =====================================================
+
+def delete_trade(trade_id: int) -> bool:
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        DELETE FROM trades
+        WHERE id = ?
+        """,
+        (trade_id,),
+    )
+
+    deleted = cursor.rowcount > 0
+
+    conn.commit()
+    conn.close()
+
+    return deleted
+
+
+# =====================================================
+# STATISTICS
+# =====================================================
+
+def get_statistics() -> dict:
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM statistics
+        WHERE id = 1
+        """
+    )
+
+    row = cursor.fetchone()
+
+    conn.close()
+
+    return dict(row) if row else {}

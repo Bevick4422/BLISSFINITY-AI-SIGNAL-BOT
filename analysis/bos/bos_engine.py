@@ -1,78 +1,34 @@
 """
 BLISSFINITY AI SIGNAL BOT
-4H BREAK OF STRUCTURE ENGINE
+4H Break of Structure Engine
 """
 
-import pandas as pd
 
-
-def detect_bos(df: pd.DataFrame):
+def bullish_bos(df):
     """
-    Detect a valid Break of Structure (BOS)
-    using full candle body closes.
+    Bullish BOS:
+    Latest close breaks above previous swing high.
     """
 
-    if len(df) < 30:
-        return {
-            "bos": False,
-            "direction": None,
-            "level": None,
-            "reason": "Not enough candles"
-        }
+    if len(df) < 5:
+        return False
 
-    # Previous swing levels
-    swing_high = df["high"].iloc[-21:-1].max()
-    swing_low = df["low"].iloc[-21:-1].min()
+    previous_high = max(df.iloc[-5:-1]["high"])
+    current_close = df.iloc[-1]["close"]
 
-    last = df.iloc[-1]
+    return current_close > previous_high
 
-    body_high = max(last["open"], last["close"])
-    body_low = min(last["open"], last["close"])
 
-    # -------------------------
-    # Bullish BOS
-    # -------------------------
+def bearish_bos(df):
+    """
+    Bearish BOS:
+    Latest close breaks below previous swing low.
+    """
 
-    if body_low > swing_high:
+    if len(df) < 5:
+        return False
 
-        return {
+    previous_low = min(df.iloc[-5:-1]["low"])
+    current_close = df.iloc[-1]["close"]
 
-            "bos": True,
-
-            "direction": "BUY",
-
-            "level": float(swing_high),
-
-            "reason": "Bullish BOS"
-
-        }
-
-    # -------------------------
-    # Bearish BOS
-    # -------------------------
-
-    if body_high < swing_low:
-
-        return {
-
-            "bos": True,
-
-            "direction": "SELL",
-
-            "level": float(swing_low),
-
-            "reason": "Bearish BOS"
-
-        }
-
-    return {
-
-        "bos": False,
-
-        "direction": None,
-
-        "level": None,
-
-        "reason": "No BOS"
-
-    }
+    return current_close < previous_low

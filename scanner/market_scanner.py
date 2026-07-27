@@ -1,20 +1,68 @@
-
 """
 BLISSFINITY AI SIGNAL BOT
-MULTI-TIMEFRAME MARKET SCANNER
+MARKET SCANNER
 """
 
 import ccxt
 import pandas as pd
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 EXCHANGE = ccxt.mexc({
-    "enableRateLimit": True
+    "enableRateLimit": True,
 })
 
+
+# =====================================
+# Load Top Volume USDT Pairs
+# =====================================
+
+def get_top_pairs(limit=100):
+
+    markets = EXCHANGE.load_markets()
+
+    tickers = EXCHANGE.fetch_tickers()
+
+    pairs = []
+
+    for symbol, market in markets.items():
+
+        if not market.get("active", True):
+            continue
+
+        if market.get("spot", False):
+            continue
+
+        if "/USDT" not in symbol:
+            continue
+
+        ticker = tickers.get(symbol)
+
+        if ticker is None:
+            continue
+
+        volume = ticker.get("quoteVolume", 0)
+
+        if volume is None:
+            volume = 0
+
+        pairs.append((symbol, volume))
+
+    pairs.sort(
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    return [
+
+        pair
+
+        for pair, _ in pairs[:limit]
+
+    ]
+
+
+# =====================================
+# Download OHLCV
+# =====================================
 
 def get_dataframe(symbol, timeframe, limit=500):
 
@@ -43,6 +91,10 @@ def get_dataframe(symbol, timeframe, limit=500):
 
     return df
 
+
+# =====================================
+# Multi-Timeframe Data
+# =====================================
 
 def fetch_market_data(symbol):
 

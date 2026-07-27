@@ -1,66 +1,406 @@
 
 """
+=====================================================
 BLISSFINITY AI SIGNAL BOT
-MAIN ENTRY POINT
+Production Main v10
+=====================================================
 """
 
+from __future__ import annotations
+
 import asyncio
+import logging
+import traceback
 
-from signal_engine import generate_signal
+from datetime import datetime
+from typing import Optional
+
+# =====================================================
+# CONFIG
+# =====================================================
+
+from config.settings import (
+    SYMBOLS,
+    SCAN_INTERVAL,
+    MAX_DAILY_SIGNALS,
+)
+
+# =====================================================
+# DATABASE
+# =====================================================
+
+from database.models import create_tables
+from tracking.trade_manager import save_trade
+
+# =====================================================
+# MARKET
+# =====================================================
+
+from market_data.fetcher import fetch_market_data
+
+# =====================================================
+# STRATEGY
+# =====================================================
+
+from engine.strategy_engine import evaluate_symbol
+
+# =====================================================
+# TELEGRAM
+# =====================================================
+
 from telegram.sender import send_signal
-from tracking.trade_manager import add_trade
-from tracking.lifecycle.trade_monitor import monitor_trades
 
-SYMBOLS = [
-    "BTC/USDT",
-    "ETH/USDT",
-    "SOL/USDT"
-]
+# =====================================================
+# LOGGER
+# =====================================================
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+
+logger = logging.getLogger("BLISSFINITY")
+
+# =====================================================
+# GLOBALS
+# =====================================================
+
+signals_today = 0
+
+current_day = datetime.utcnow().date()
+
+running = True
+
+# =====================================================
+# DAILY RESET
+# =====================================================
+
+def reset_daily_counter():
+
+    global current_day
+    global signals_today
+
+    today = datetime.utcnow().date()
+
+    if today != current_day:
+
+        current_day = today
+
+        signals_today = 0
+
+        logger.info(
+            "Daily signal counter reset."
+        )
+
+# =====================================================
+# DAILY LIMIT
+# =====================================================
+
+def daily_limit_reached():
+
+    return signals_today >= MAX_DAILY_SIGNALS
+
+# =====================================================
+# STARTUP
+# =====================================================
+
+def startup():
+
+    print()
+
+    print("=" * 60)
+
+    print("BLISSFINITY AI SIGNAL BOT")
+
+    print("Production Version")
+
+    print("=" * 60)
+
+    print()
+
+    logger.info("Initializing database...")
+
+    create_tables()
+
+    logger.info("Database ready.")
+
+    logger.info(
+        "Loaded %s trading pairs.",
+        len(SYMBOLS),
+    )
+
+    logger.info(
+        "Daily Signal Limit : %s",
+        MAX_DAILY_SIGNALS,
+    )
+
+    logger.info(
+        "Scan Interval : %s seconds",
+        SCAN_INTERVAL,
+    )
+
+    print()
+
+# =====================================================
+# SCAN ONE SYMBOL
+# =====================================================
+
+async def scan_symbol(
+    symbol: str,
+) -> Optional[dict]:
+
+    global signals_today
+
+    try:
+
+        logger.info(
+            "Scanning %s",
+            symbol,
+        )
+
+        market = fetch_market_data(symbol)
+
+        if market is None:
+
+            logger.warning(
+                "%s | Market unavailable",
+                symbol,
+            )
+
+            return None
+
+        signal = evaluate_symbol(
+            symbol=symbol,
+            market=market,
+        )
+
+        if signal is None:
+
+            return None
+        # =============================================
+        # SAVE TRADE
+        # =============================================
+
+        trade_id = save_trade(signal)
+
+        if trade_id is None:
+
+            logger.info(
+                "%s | Trade rejected.",
+                symbol,
+            )
+
+            return None
+
+        signal["trade_id"] = trade_id
+
+        # =============================================
+        # TELEGRAM
+        # =============================================
+
+        sent = await send_signal(signal)
+
+        if sent:
+
+            logger.info(
+                "%s | Telegram sent.",
+                symbol,
+            )
+
+        else:
+
+            logger.warning(
+                "%s | Telegram failed.",
+                symbol,
+            )
+
+        # =============================================
+        # DAILY COUNT
+        # =============================================
+
+        signals_today += 1
+
+        logger.info(
+
+            "Signals Today : %s/%s",
+
+            signals_today,
+
+            MAX_DAILY_SIGNALS,
+
+        )
+
+        return signal
+
+    except Exception as e:
+
+        logger.error(
+
+            "%s | Scan Failed",
+
+            symbol,
+
+        )
+
+        traceback.print_exc()
+
+        return None
+
+
+# =====================================================
+# SCAN MARKET
+# =====================================================
+
+async def scan_market():
+
+    reset_daily_counter()
+
+    if daily_limit_reached():
+
+        logger.info(
+
+            "Daily signal limit reached."
+
+        )
+
+        return
+
+    logger.info(
+
+        "Scanning %s symbols...",
+
+        len(SYMBOLS),
+
+    )
+
+    for symbol in SYMBOLS:
+
+        if daily_limit_reached():
+
+            logger.info(
+
+                "Maximum daily signals reached."
+
+            )
+
+            break
+
+        await scan_symbol(symbol)
+
+
+# =====================================================
+# MAIN LOOP
+# =====================================================
 
 async def run():
 
-    while True:
+    startup()
 
-        print("\n========== NEW MARKET SCAN ==========\n")
+    logger.info(
 
-        # Monitor existing trades
+        "Scanner Started."
+
+    )
+
+    while running:
+
         try:
-            await monitor_trades()
-        except Exception as e:
-            print(f"Trade Monitor Error: {e}")
 
-        # Scan markets
-        for symbol in SYMBOLS:
+            await scan_market()
 
-            try:
+        except Exception:
 
-                signal = generate_signal(symbol)
+            logger.exception(
 
-                if signal is None:
+                "Scanner Loop Error"
 
-                    print(f"{symbol} | No Signal")
-                    continue
+            )
 
-                if add_trade(signal):
+        logger.info(
 
-                    await send_signal(signal)
+            "Sleeping %s seconds...",
 
-                    print(f"{symbol} | Signal Sent")
+            SCAN_INTERVAL,
 
-                else:
+        )
 
-                    print(f"{symbol} | Duplicate Signal")
+        await asyncio.sleep(
 
-            except Exception as e:
+            SCAN_INTERVAL
 
-                print(f"{symbol} | ERROR -> {e}")
+        )
+# =====================================================
+# SHUTDOWN
+# =====================================================
 
-        print("\nNext scan in 60 seconds...\n")
+async def shutdown():
 
-        await asyncio.sleep(60)
+    logger.info("")
 
+    logger.info("=" * 60)
+
+    logger.info(
+        "BLISSFINITY AI SIGNAL BOT STOPPED"
+    )
+
+    logger.info("=" * 60)
+
+    logger.info("Shutdown Complete.")
+
+
+# =====================================================
+# ENTRY POINT
+# =====================================================
+
+async def main():
+
+    try:
+
+        await run()
+
+    except asyncio.CancelledError:
+
+        logger.info(
+            "Task Cancelled."
+        )
+
+    except KeyboardInterrupt:
+
+        logger.info(
+            "Keyboard Interrupt."
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Fatal Error"
+        )
+
+    finally:
+
+        await shutdown()
+
+
+# =====================================================
+# START BOT
+# =====================================================
 
 if __name__ == "__main__":
 
-    asyncio.run(run())
+    try:
+
+        asyncio.run(main())
+
+    except KeyboardInterrupt:
+
+        print()
+
+        print("=" * 60)
+
+        print("Bot stopped by user.")
+
+        print("=" * 60)
+
+    except Exception:
+
+        traceback.print_exc()

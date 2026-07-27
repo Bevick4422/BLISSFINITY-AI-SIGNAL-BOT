@@ -1,6 +1,6 @@
 
 """
-BLISSFINITY AI SIGNAL BOT
+BLISSFINITY SIGNAL
 TELEGRAM MESSAGE FORMATTER
 """
 
@@ -13,12 +13,12 @@ def format_signal(signal: dict) -> str:
     """
 
     return f"""
-🚨 *BLISSFINITY AI SIGNAL*
+🚨 *BLISSFINITY SIGNAL*
 
 📈 Pair:
 {signal["pair"]}
 
-🟢 Direction:
+{"🟢" if signal["side"].upper() == "BUY" else "🔴"} Direction:
 {signal["side"]}
 
 🎯 Entry:
@@ -37,15 +37,9 @@ def format_signal(signal: dict) -> str:
 1:{signal["rr"]}
 
 📊 Confidence
-{signal["confidence"]}%
+{signal.get("confidence", 80)}%
 
-🏆 Grade
-{signal["grade"]}
-
-📝 Reasons
-{" • ".join(signal["reasons"])}
-
-🕒 {datetime.now().strftime("%Y-%m-%d %H:%M")}
+🕒 {datetime.now().strftime("%Y-%m-%d %H:%M")} UTC
 """.strip()
 
 
@@ -53,8 +47,11 @@ def format_entry(pair, side):
     return f"""
 🟢 *ENTRY FILLED*
 
-Pair: {pair}
-Direction: {side}
+📈 Pair:
+{pair}
+
+{"🟢" if side.upper() == "BUY" else "🔴"} Direction:
+{side}
 
 Trade is now ACTIVE.
 """.strip()
@@ -64,8 +61,11 @@ def format_tp(pair, side, level):
     return f"""
 🎯 *TAKE PROFIT {level} HIT*
 
-Pair: {pair}
-Direction: {side}
+📈 Pair:
+{pair}
+
+{"🟢" if side.upper() == "BUY" else "🔴"} Direction:
+{side}
 
 Congratulations! ✅
 """.strip()
@@ -75,8 +75,11 @@ def format_stop(pair, side):
     return f"""
 🛑 *STOP LOSS HIT*
 
-Pair: {pair}
-Direction: {side}
+📈 Pair:
+{pair}
+
+{"🟢" if side.upper() == "BUY" else "🔴"} Direction:
+{side}
 
 Risk managed.
 

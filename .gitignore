@@ -1,17 +1,28 @@
+
 # Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
 
 # Virtual Environment
 venv/
+
+# Environment Variables
 .env
 
-# Trade data
+# SQLite Database
+database/*.db
+
+# Runtime Data
 tracking/active_trades.json
+
+# Python caches
+.pytest_cache/
+.mypy_cache/
 
 # Logs
 *.log
+logs/
 
 # VS Code
 .vscode/
@@ -19,3 +30,6 @@ tracking/active_trades.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+*.zip

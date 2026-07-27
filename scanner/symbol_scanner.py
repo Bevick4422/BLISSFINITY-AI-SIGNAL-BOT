@@ -1,63 +1,81 @@
-from market_data.mexc_client import get_klines
-from signals.ai_signal_engine import generate_signal
 
-# Initial watchlist
-from market_data.symbol_fetcher import get_all_symbols
+"""
+BLISSFINITY AI SIGNAL BOT
+SYMBOL SCANNER
+"""
 
-SYMBOLS = get_all_symbols()    "BTC_USDT",
-    "ETH_USDT",
-    "SOL_USDT",
-    "XRP_USDT",
-    "BNB_USDT",
-    "DOGE_USDT",
-    "ADA_USDT",
-    "LINK_USDT",
-    "AVAX_USDT",
-    "SUI_USDT",
-]
+import traceback
+
+from config.settings import (
+    SYMBOLS,
+    MAX_PAIRS,
+)
+
+from market_data.fetcher import fetch_market_data
+from engine.strategy_engine import evaluate_symbol
+
+
+def scan_symbol(symbol):
+    """
+    Scan a single trading pair.
+    """
+
+    try:
+
+        market = fetch_market_data(symbol)
+
+        if market is None:
+            return None
+
+        signal = evaluate_symbol(
+    symbol,
+    market,
+)
+
+        return signal
+
+    except Exception as e:
+
+        print(f"{symbol} Scan Error: {e}")
+        traceback.print_exc()
+
+        return None
 
 
 def scan_market():
-
-    print("=" * 50)
-    print("BLISSFINITY MARKET SCANNER")
-    print("=" * 50)
+    """
+    Scan all configured symbols.
+    """
 
     signals = []
 
-    for symbol in SYMBOLS:
+    symbols = SYMBOLS[:MAX_PAIRS]
 
-        try:
+    print(f"\nScanning {len(symbols)} markets...\n")
 
-            print(f"Scanning {symbol}...")
+    for symbol in symbols:
 
-            df = get_klines(
-                symbol=symbol,
-                interval="15m",
-                limit=300
-            )
+        signal = scan_symbol(symbol)
 
-            signal = generate_signal(df)
+        if signal:
 
-            if signal:
+            signals.append(signal)
 
-                signal["pair"] = symbol
-                signals.append(signal)
+            print(f"✓ Signal detected: {symbol}")
 
-                print(f"✅ SIGNAL FOUND -> {symbol}")
+        else:
 
-        except Exception as e:
-
-            print(f"❌ {symbol} -> {e}")
-
-    print()
-
-    print(f"Finished scanning.")
-
-    print(f"Signals Found: {len(signals)}")
+            print(f"• No signal generated yet: {symbol}")
 
     return signals
 
-
 if __name__ == "__main__":
-    scan_market()
+
+    results = scan_market()
+
+    print("\n============================")
+    print(f"Signals Found : {len(results)}")
+    print("============================")
+
+    for signal in results:
+        print(signal)
