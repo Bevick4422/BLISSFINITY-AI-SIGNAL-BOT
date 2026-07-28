@@ -1,48 +1,49 @@
 
 """
-=====================================================
+=========================================================
 BLISSFINITY AI SIGNAL BOT
-Production Strategy Engine v9
-=====================================================
+Strategy Engine v10
+=========================================================
 
 Trading Pipeline
 
 Market Data
-    ↓
+      ↓
 Market Validation
-    ↓
+      ↓
 Market Regime Filter
-    ↓
+      ↓
 Daily Bias
-    ↓
+      ↓
 Daily Setup Detection
-    ↓
-Daily Confirmation
-    ↓
+      ↓
+Bias Confirmation
+      ↓
 Save Daily Rejection Setup
-    ↓
+      ↓
 Wait For H4 BOS
-    ↓
+      ↓
 Entry Selection
-    ↓
-Stop Loss Engine
-    ↓
+      ↓
+Stop Loss
+      ↓
 Risk Engine
-    ↓
+      ↓
 Confluence Score
-    ↓
-Signal Builder
-=====================================================
+      ↓
+Signal Generation
+=========================================================
 """
 
 from __future__ import annotations
 
 import traceback
-from typing import Any, Dict, Optional
 
-# =====================================================
+from typing import Dict, Any, Optional
+
+# ==========================================================
 # DAILY ANALYSIS
-# =====================================================
+# ==========================================================
 
 from analysis.daily_setup.daily_engine import (
     detect_daily_setup,
@@ -60,42 +61,42 @@ from engine.detectors.daily_rejection import (
     detect_daily_rejection_signal,
 )
 
-# =====================================================
+# ==========================================================
 # MARKET STRUCTURE
-# =====================================================
+# ==========================================================
 
 from analysis.bos.bos_engine import (
     bullish_bos,
     bearish_bos,
 )
 
-# =====================================================
-# ENTRY ENGINE
-# =====================================================
+# ==========================================================
+# ENTRY
+# ==========================================================
 
 from analysis.entry.entry_selector import (
     select_best_entry,
 )
 
-# =====================================================
+# ==========================================================
 # RISK
-# =====================================================
+# ==========================================================
 
 from analysis.risk.stoploss_engine import (
     calculate_stop_loss,
 )
 
-# =====================================================
+# ==========================================================
 # SIGNAL
-# =====================================================
+# ==========================================================
 
 from engine.signal_builder import (
     build_signal,
 )
 
-# =====================================================
+# ==========================================================
 # SETUP STORAGE
-# =====================================================
+# ==========================================================
 
 from analysis.setup_manager.setup_manager import (
     get_setup,
@@ -103,10 +104,16 @@ from analysis.setup_manager.setup_manager import (
     remove_setup,
 )
 
+# ==========================================================
+# DEBUG
+# ==========================================================
+
 DEBUG = True
-# =====================================================
+
+
+# ==========================================================
 # MARKET VALIDATION
-# =====================================================
+# ==========================================================
 
 def validate_market(
     market: Dict[str, Any],
@@ -128,22 +135,21 @@ def validate_market(
         if market[tf] is None:
             return False
 
-        if len(market[tf]) < 20:
+        if len(market[tf]) < 50:
             return False
 
     return True
 
 
-# =====================================================
+# ==========================================================
 # MARKET REGIME
-# =====================================================
+# ==========================================================
 
 def detect_market_regime(h4) -> str:
     """
     Detect overall market condition.
 
-    Returns
-
+    Returns:
         TRENDING
         RANGING
         HIGH_VOLATILITY
@@ -157,63 +163,52 @@ def detect_market_regime(h4) -> str:
     movement = highest - lowest
 
     average_range = (
-        (recent["high"] - recent["low"])
-        .mean()
-    )
+        recent["high"] - recent["low"]
+    ).mean()
 
-    if average_range == 0:
-
+    if average_range <= 0:
         return "RANGING"
 
     ratio = movement / average_range
 
     if ratio >= 5:
-
         return "TRENDING"
 
     if ratio <= 2:
-
         return "RANGING"
 
     return "HIGH_VOLATILITY"
 
 
-# =====================================================
+# ==========================================================
 # SETUP VALIDATION
-# =====================================================
+# ==========================================================
 
 def validate_setup(
-    setup: Dict[str, Any],
+    setup: Optional[Dict[str, Any]],
 ) -> bool:
+    """
+    Validate saved setup object.
+    """
 
     if setup is None:
-
         return False
 
     required = (
-
         "symbol",
-
         "direction",
-
         "setup",
-
         "status",
-
         "level",
-
     )
 
     return all(
-
         key in setup
-
         for key in required
-
     )
-# =====================================================
+# ==========================================================
 # CREATE DAILY SETUP
-# =====================================================
+# ==========================================================
 
 def create_daily_setup(
     symbol: str,
@@ -221,22 +216,39 @@ def create_daily_setup(
     bias: str,
 ) -> Optional[Dict[str, Any]]:
     """
-    Analyse the daily timeframe.
+    Analyse the Daily timeframe.
 
     Flow
 
-        Detect Daily Setup
-              │
-              ├── Daily Engulfing
-              │       │
-              │       ▼
-              │   Immediate Signal
-              │
-              └── Daily Rejection
-                      │
-                      ▼
-                 Save Setup
+        Daily Setup
+            │
+            ├── Bias Validation
+            │
+            ├── Daily Engulfing
+            │       │
+            │       ▼
+            │   Immediate Signal
+            │
+            └── Daily Rejection
+                    │
+                    ▼
+                Save Setup
     """
+
+    # ------------------------------------------------------
+    # Ignore neutral market bias
+    # ------------------------------------------------------
+
+    if bias == "NEUTRAL":
+
+        if DEBUG:
+            print(f"{symbol} | Neutral Bias - Skipping")
+
+        return None
+
+    # ------------------------------------------------------
+    # Detect Daily Setup
+    # ------------------------------------------------------
 
     result = detect_daily_setup(daily)
 
@@ -246,26 +258,45 @@ def create_daily_setup(
     if not result.get("valid", False):
         return None
 
+    setup_name = result.get("setup")
+
+    level = float(result.get("level"))
+
+    # ------------------------------------------------------
+    # Setup must agree with trend bias
+    # ------------------------------------------------------
+
+    if setup_name == "V Shape" and bias != "BUY":
+
+        if DEBUG:
+            print(f"{symbol} | Bullish setup rejected (Bias = {bias})")
+
+        return None
+
+    if setup_name == "A Shape" and bias != "SELL":
+
+        if DEBUG:
+            print(f"{symbol} | Bearish setup rejected (Bias = {bias})")
+
+        return None
+
     if DEBUG:
 
         print("\n" + "=" * 60)
         print(symbol)
         print("=" * 60)
         print(f"Bias  : {bias}")
-        print(f"Setup : {result.get('setup')}")
-        print(f"Level : {result.get('level')}")
+        print(f"Setup : {setup_name}")
+        print(f"Level : {level}")
         print("=" * 60)
 
-        # =================================================
+    # ------------------------------------------------------
     # DAILY ENGULFING
-    # =================================================
+    # ------------------------------------------------------
 
     engulfing = detect_daily_engulfing_signal(result)
 
     if engulfing is not None:
-
-        # Entry price is the close of the confirmed
-        # Daily Engulfing candle.
 
         entry_price = float(
             daily.iloc[-1]["close"]
@@ -277,7 +308,7 @@ def create_daily_setup(
 
             direction=engulfing["direction"],
 
-            setup=result["setup"],
+            setup=setup_name,
 
             candle=daily.iloc[-1],
 
@@ -290,26 +321,31 @@ def create_daily_setup(
         if signal is None:
 
             if DEBUG:
-                print(
-                    f"{symbol} | Failed To Build Daily Engulfing Signal"
-                )
+                print(f"{symbol} | Failed To Build Engulfing Signal")
 
             return None
 
         if DEBUG:
-            print(
-                f"{symbol} | Daily Engulfing Signal Generated"
-            )
+            print(f"{symbol} | Daily Engulfing Signal Generated")
 
         return signal
 
-    # =================================================
+    # ------------------------------------------------------
     # DAILY REJECTION
-    # =================================================
+    # ------------------------------------------------------
 
     rejection = detect_daily_rejection_signal(result)
 
     if rejection is None:
+        return None
+
+    # Extra safety check
+
+    if rejection["direction"] != bias:
+
+        if DEBUG:
+            print(f"{symbol} | Rejection Direction Mismatch")
+
         return None
 
     setup_data = {
@@ -318,13 +354,13 @@ def create_daily_setup(
 
         "direction": rejection["direction"],
 
-        "setup": result["setup"],
+        "setup": setup_name,
 
         "status": "WAITING_FOR_BOS",
 
         "method": "DAILY_REJECTION",
 
-        "level": float(result["level"]),
+        "level": level,
 
         "bos": False,
 
@@ -336,12 +372,13 @@ def create_daily_setup(
 
     add_setup(setup_data)
 
-    print(f"{symbol} | Daily Rejection Saved")
+    if DEBUG:
+        print(f"{symbol} | Daily Rejection Saved")
 
     return None
-# =====================================================
+# ==========================================================
 # EVALUATE SYMBOL
-# =====================================================
+# ==========================================================
 
 def evaluate_symbol(
     symbol: str,
@@ -350,36 +387,28 @@ def evaluate_symbol(
     """
     Main strategy evaluation.
 
-    Flow
+    Pipeline
 
-    Validate Market
-          ↓
-    Market Regime
-          ↓
-    Daily Bias
-          ↓
-    Existing Setup?
-          ↓
-          ├── No
-          │      ↓
-          │  Create Daily Setup
-          │
-          └── Yes
-                 ↓
-              Wait BOS
-                 ↓
-             Entry Engine
-                 ↓
-             Stop Loss
-                 ↓
-             Build Signal
+        Validate Market
+              ↓
+        Detect Market Regime
+              ↓
+        Determine Daily Bias
+              ↓
+        Skip Neutral Bias
+              ↓
+        Load Existing Setup
+              ↓
+        Create New Setup
+              ↓
+        Wait For BOS
     """
 
     try:
 
-        # =================================================
+        # ==================================================
         # VALIDATE MARKET
-        # =================================================
+        # ==================================================
 
         if not validate_market(market):
 
@@ -391,9 +420,9 @@ def evaluate_symbol(
         daily = market["1d"]
         h4 = market["4h"]
 
-        # =================================================
-        # MARKET REGIME FILTER
-        # =================================================
+        # ==================================================
+        # MARKET REGIME
+        # ==================================================
 
         regime = detect_market_regime(h4)
 
@@ -404,18 +433,29 @@ def evaluate_symbol(
 
             return None
 
-        # =================================================
+        # ==================================================
         # DAILY BIAS
-        # =================================================
+        # ==================================================
 
         bias = get_daily_bias(daily)
 
         if DEBUG:
             print(f"{symbol} | Bias : {bias}")
 
-        # =================================================
-        # LOAD SETUP
-        # =================================================
+        # ==================================================
+        # SKIP NEUTRAL TREND
+        # ==================================================
+
+        if bias == "NEUTRAL":
+
+            if DEBUG:
+                print(f"{symbol} | Neutral Bias - Skipped")
+
+            return None
+
+        # ==================================================
+        # LOAD SAVED SETUP
+        # ==================================================
 
         setup = get_setup(symbol)
 
@@ -427,9 +467,20 @@ def evaluate_symbol(
 
                 return None
 
-        # =================================================
+            # Safety check
+
+            if setup["direction"] != bias:
+
+                if DEBUG:
+                    print(f"{symbol} | Bias Changed - Setup Removed")
+
+                remove_setup(symbol)
+
+                return None
+
+        # ==================================================
         # CREATE NEW SETUP
-        # =================================================
+        # ==================================================
 
         if setup is None:
 
@@ -443,9 +494,9 @@ def evaluate_symbol(
 
             )
 
-        # =================================================
+        # ==================================================
         # WAITING FOR BOS
-        # =================================================
+        # ==================================================
 
         if setup["status"] != "WAITING_FOR_BOS":
 
@@ -455,9 +506,9 @@ def evaluate_symbol(
 
         direction = setup["direction"]
 
-        # =================================================
+        # ==================================================
         # BOS CONFIRMATION
-        # =================================================
+        # ==================================================
 
         if direction == "BUY":
 
@@ -481,73 +532,91 @@ def evaluate_symbol(
             return None
 
         print(f"{symbol} | BOS Confirmed")
-
-        # =================================================
+        # ==================================================
         # ENTRY SELECTION
-        # =================================================
+        # ==================================================
 
         entry = select_best_entry(
-
             df=h4,
-
             level=setup["level"],
-
             direction=direction,
-
         )
 
-        if not entry:
+        if entry is None:
+
+            if DEBUG:
+                print(f"{symbol} | No Valid Entry")
 
             return None
 
         if not entry["entry_data"]["valid"]:
 
+            if DEBUG:
+                print(f"{symbol} | Entry Validation Failed")
+
             return None
 
-        print(
-            f"{symbol} | Entry : "
-            f"{entry['entry_type']}"
+        current_price = float(
+            h4.iloc[-1]["close"]
         )
 
-        # =================================================
-        # ATR
-        # =================================================
+        entry_price = entry.get("entry_price")
 
-        true_range = (
+        # ==================================================
+        # ENTRY VALIDATION
+        # ==================================================
 
-            h4["high"] - h4["low"]
+        if entry["entry_type"] == "ENGULFING":
 
-        ).rolling(14).mean()
+            # Market execution
+            entry_price = current_price
 
-        atr = float(true_range.iloc[-1])
+        else:
 
-        # =================================================
+            if entry_price is None:
+
+                return None
+
+            distance = abs(
+                current_price - entry_price
+            ) / current_price
+
+            # Reject entries more than 1% away
+            if distance > 0.01:
+
+                print(
+                    f"{symbol} | Stale Entry Rejected "
+                    f"({distance * 100:.2f}% from market)"
+                )
+
+                return None
+
+        entry["entry_price"] = entry_price
+
+        print(
+            f"{symbol} | Entry : {entry['entry_type']}"
+        )
+
+        # ==================================================
         # STOP LOSS
-        # =================================================
+        # ==================================================
 
         stop = calculate_stop_loss(
-
             df=h4,
-
-            atr=atr,
-
+            entry_price=entry_price,
             direction=direction,
-
-            entry_type=entry["entry_type"],
-
         )
 
-        if not stop["valid"]:
+        if stop is None:
+
+            if DEBUG:
+                print(f"{symbol} | Stop Loss Failed")
 
             return None
 
-        print(
-            f"{symbol} | Stop : "
-            f"{stop['stop_loss']}"
-        )
-        # =================================================
+        # ==================================================
         # BUILD SIGNAL
-        # =================================================
+        # ==================================================
 
         signal = build_signal(
 
@@ -559,7 +628,7 @@ def evaluate_symbol(
 
             candle=h4.iloc[-1],
 
-            entry=entry.get("entry_price"),
+            entry=entry_price,
 
             entry_type=entry["entry_type"],
 
@@ -574,25 +643,33 @@ def evaluate_symbol(
 
             return None
 
-        # =================================================
-        # CONFLUENCE SCORE
-        # =================================================
+        # ==================================================
+        # CONFIDENCE SCORE
+        # ==================================================
 
         score = 0
 
-        # BOS Confirmed
+        # BOS
         score += 25
 
-        # Market Trending
+        # Trend
         if regime == "TRENDING":
             score += 20
 
+        # Daily Bias
+        score += 20
+
         # Entry Quality
         entry_scores = {
+
             "LEFT_SHOULDER": 35,
+
             "BREAK_RETEST": 30,
+
             "FRESH_LEVEL": 25,
+
             "ENGULFING": 15,
+
         }
 
         score += entry_scores.get(
@@ -600,15 +677,11 @@ def evaluate_symbol(
             0,
         )
 
-        # Daily Bias Exists
-        if bias in ("BUY", "SELL"):
-            score += 20
-
         signal["confidence"] = min(score, 100)
 
-        # =================================================
+        # ==================================================
         # CLEANUP
-        # =================================================
+        # ==================================================
 
         remove_setup(symbol)
 

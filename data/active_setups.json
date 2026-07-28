@@ -22,17 +22,6 @@
         "created_at": "2026-07-24T03:23:54.914475"
     },
     {
-        "symbol": "SOL/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 73.32,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": "2026-07-24T03:23:55.998172"
-    },
-    {
         "symbol": "HYPE/USDT:USDT",
         "direction": "BUY",
         "setup": "V Shape",
@@ -187,17 +176,6 @@
         "created_at": "2026-07-24T03:24:42.178901"
     },
     {
-        "symbol": "SEI/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 0.04514,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": "2026-07-24T03:24:43.227837"
-    },
-    {
         "symbol": "LAB/USDT:USDT",
         "direction": "BUY",
         "setup": "V Shape",
@@ -297,17 +275,6 @@
         "created_at": "2026-07-24T03:25:38.233431"
     },
     {
-        "symbol": "RENDER/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 1.446,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": "2026-07-24T03:25:45.027329"
-    },
-    {
         "symbol": "VVV/USDT:USDT",
         "direction": "SELL",
         "setup": "A Shape",
@@ -350,17 +317,6 @@
         "bos": false,
         "signal_sent": false,
         "created_at": "2026-07-24T03:31:36.013264"
-    },
-    {
-        "symbol": "DOT/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 0.801,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": "2026-07-24T03:41:20.446627"
     },
     {
         "symbol": "BCH/USDT:USDT",
@@ -418,17 +374,6 @@
         "created_at": "2026-07-24T07:22:15.870830"
     },
     {
-        "symbol": "FET/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 0.1501,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": "2026-07-24T07:32:47.168328"
-    },
-    {
         "symbol": "UKOIL/USDT:USDT",
         "direction": "SELL",
         "setup": "A Shape",
@@ -440,45 +385,12 @@
         "created_at": "2026-07-24T07:35:10.346366"
     },
     {
-        "symbol": "TAO/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 186.7,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": null
-    },
-    {
-        "symbol": "XLM/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 0.17576,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": null
-    },
-    {
         "symbol": "ADA/USDT:USDT",
         "direction": "SELL",
         "setup": "A Shape",
         "status": "WAITING_FOR_BOS",
         "method": "DAILY_REJECTION",
         "level": 0.1807,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": null
-    },
-    {
-        "symbol": "NEAR/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 1.777,
         "bos": false,
         "signal_sent": false,
         "created_at": null
@@ -649,23 +561,364 @@
         "created_at": null
     },
     {
-        "symbol": "FLOKI/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 2.063e-05,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": null
-    },
-    {
         "symbol": "CROSS/USDT:USDT",
         "direction": "SELL",
         "setup": "A Shape",
         "status": "WAITING_FOR_BOS",
         "method": "DAILY_REJECTION",
         "level": 0.10426,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "XAU/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 4168.72,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "XAUT/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 4155.0,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "SILVER/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 61.02,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "SPX500/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 7377.2,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "USOIL/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 93.41,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "SHIB/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 5.82e-06,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "SPCXSTOCK/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 109.21,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "NAS100/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 28065.0,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "DIA/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.0976,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "LTC/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 48.24,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "PEPE/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 3.1022e-06,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "BEAT/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 4.729,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "ARB/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.07645,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "FILECOIN/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.688,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "COTI/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.012494,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "XPL/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.07861,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "NIL/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.04792,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "EUL/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 2.663,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "TAG/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.001435,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "LIT/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 1.9721,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "RIVER/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 2.65,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "ZRO/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.9639,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "EIGEN/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.1955,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "AAVE/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 102.53,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "TESLA/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 304.71,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "SKYAI/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.02277,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "PENGU/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.006492,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "BANK/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.66629,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "RUNE/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.4574,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "BTW/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.11833,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "CRV/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.2,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "DOT/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.7475,
         "bos": false,
         "signal_sent": false,
         "created_at": null

@@ -1,4 +1,3 @@
-
 """
 =====================================================
 BLISSFINITY AI SIGNAL BOT
@@ -17,7 +16,7 @@ from database.repository import (
 
 
 # =====================================================
-# REQUIRED FIELDS
+# REQUIRED SIGNAL FIELDS
 # =====================================================
 
 REQUIRED_FIELDS = (
@@ -35,12 +34,17 @@ REQUIRED_FIELDS = (
 # =====================================================
 
 def validate_signal(signal: dict[str, Any]) -> tuple[bool, str]:
+    """
+    Validate required trade fields.
+    """
 
     for field in REQUIRED_FIELDS:
 
         if field not in signal:
-
             return False, f"Missing required field: {field}"
+
+        if signal[field] is None:
+            return False, f"{field} cannot be None"
 
     return True, ""
 
@@ -50,28 +54,29 @@ def validate_signal(signal: dict[str, Any]) -> tuple[bool, str]:
 # =====================================================
 
 def add_trade(signal: dict[str, Any]) -> int | None:
+    """
+    Save a new trade if no active duplicate exists.
+    """
 
     valid, message = validate_signal(signal)
 
     if not valid:
-
-        print(message)
+        print(f"Trade Validation Error | {message}")
         return None
 
     symbol = signal["symbol"]
     direction = signal["direction"]
 
     if trade_exists(symbol, direction):
-
-        print(f"{symbol} | Duplicate active trade")
-
+        print(f"{symbol} | Active trade already exists.")
         return None
 
-    signal.setdefault("state", "PENDING")
-    signal.setdefault("entry_type", "ENGULFING")
-    signal.setdefault("confidence", 80)
-    signal.setdefault("setup", None)
+    trade = signal.copy()
 
-    trade_id = save_trade(signal)
+    trade.setdefault("state", "PENDING")
+    trade.setdefault("entry_type", "ENGULFING")
+    trade.setdefault("setup", None)
+    trade.setdefault("confidence", 80)
+    trade.setdefault("break_even", 0)
 
-    return trade_id
+    return save_trade(trade)

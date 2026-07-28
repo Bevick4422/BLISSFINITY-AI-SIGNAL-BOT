@@ -1,15 +1,14 @@
-
 """
 =====================================================
 BLISSFINITY AI SIGNAL BOT
-Production Telegram Sender v8
+Telegram Sender
 =====================================================
 """
 
 from __future__ import annotations
 
 import asyncio
-import traceback
+import logging
 
 import aiohttp
 
@@ -21,6 +20,10 @@ from config.settings import (
 from telegram.formatter import format_signal
 
 
+# =====================================================
+# CONFIGURATION
+# =====================================================
+
 BASE_URL = (
     f"https://api.telegram.org/"
     f"bot{TELEGRAM_TOKEN}/sendMessage"
@@ -29,6 +32,8 @@ BASE_URL = (
 REQUEST_TIMEOUT = 15
 MAX_RETRIES = 3
 
+logger = logging.getLogger("Telegram")
+
 
 # =====================================================
 # SEND MESSAGE
@@ -36,37 +41,29 @@ MAX_RETRIES = 3
 
 async def send_message(text: str) -> bool:
     """
-    Send a Markdown message to Telegram.
-
-    Returns
-    -------
-    bool
-        True if sent successfully.
+    Send a Telegram Markdown message.
     """
 
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
 
-        print("Telegram is not configured.")
+        logger.warning(
+            "Telegram credentials are missing."
+        )
 
         return False
 
     payload = {
-
         "chat_id": TELEGRAM_CHAT_ID,
-
         "text": text,
-
         "parse_mode": "Markdown",
-
         "disable_web_page_preview": True,
-
     }
 
     timeout = aiohttp.ClientTimeout(
         total=REQUEST_TIMEOUT
     )
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(MAX_RETRIES):
 
         try:
 
@@ -85,20 +82,20 @@ async def send_message(text: str) -> bool:
 
                     error = await response.text()
 
-                    print(
-                        f"Telegram Error "
-                        f"(Attempt {attempt}): "
-                        f"{error}"
+                    logger.error(
+                        "Telegram Error (%s/%s): %s",
+                        attempt + 1,
+                        MAX_RETRIES,
+                        error,
                     )
 
         except Exception:
 
-            print(
-                f"Telegram Exception "
-                f"(Attempt {attempt})"
+            logger.exception(
+                "Telegram request failed (%s/%s)",
+                attempt + 1,
+                MAX_RETRIES,
             )
-
-            traceback.print_exc()
 
         await asyncio.sleep(2)
 
@@ -106,14 +103,14 @@ async def send_message(text: str) -> bool:
 
 
 # =====================================================
-# NEW SIGNAL
+# SIGNAL ALERT
 # =====================================================
 
-async def send_signal(signal) -> bool:
+async def send_signal(signal: dict) -> bool:
 
-    text = format_signal(signal)
-
-    return await send_message(text)
+    return await send_message(
+        format_signal(signal)
+    )
 
 
 # =====================================================
@@ -125,14 +122,17 @@ async def send_entry_message(
     side: str,
 ) -> bool:
 
-    text = (
-        "🟢 *ENTRY HIT*\n\n"
-        f"Pair: {pair}\n"
-        f"Direction: {side}\n\n"
-        "Trade is now LIVE."
-    )
+    return await send_message(
+        f"""
+🟢 *ENTRY HIT*
 
-    return await send_message(text)
+Pair: `{pair}`
+
+Direction: *{side}*
+
+The trade is now ACTIVE.
+"""
+    )
 
 
 # =====================================================
@@ -143,18 +143,22 @@ async def send_tp_message(
     pair: str,
     side: str,
     tp: int,
-    rr,
+    rr: str,
 ) -> bool:
 
-    text = (
-        f"🎯 *TP{tp} HIT*\n\n"
-        f"Pair: {pair}\n"
-        f"Direction: {side}\n"
-        f"Risk : Reward: {rr}\n\n"
-        "Congratulations! 🚀"
-    )
+    return await send_message(
+        f"""
+🎯 *TAKE PROFIT {tp}*
 
-    return await send_message(text)
+Pair: `{pair}`
+
+Direction: *{side}*
+
+Reward: *{rr}*
+
+Excellent execution 🚀
+"""
+    )
 
 
 # =====================================================
@@ -166,14 +170,17 @@ async def send_stop_message(
     side: str,
 ) -> bool:
 
-    text = (
-        "🔴 *STOP LOSS HIT*\n\n"
-        f"Pair: {pair}\n"
-        f"Direction: {side}\n\n"
-        "Trade Closed."
-    )
+    return await send_message(
+        f"""
+🔴 *STOP LOSS*
 
-    return await send_message(text)
+Pair: `{pair}`
+
+Direction: *{side}*
+
+Trade closed.
+"""
+    )
 
 
 # =====================================================
@@ -185,11 +192,14 @@ async def send_breakeven_message(
     side: str,
 ) -> bool:
 
-    text = (
-        "⚪ *BREAKEVEN*\n\n"
-        f"Pair: {pair}\n"
-        f"Direction: {side}\n\n"
-        "Trade closed at breakeven."
-    )
+    return await send_message(
+        f"""
+⚪ *BREAKEVEN*
 
-    return await send_message(text)
+Pair: `{pair}`
+
+Direction: *{side}*
+
+Trade closed at break-even.
+"""
+    )

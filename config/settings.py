@@ -1,29 +1,65 @@
+
 """
-BLISSFINITY SIGNAL BOT
-CONFIGURATION
+=========================================================
+BLISSFINITY AI SIGNAL BOT
+Configuration
+=========================================================
 """
 
+from __future__ import annotations
+
+import logging
 import os
+
 import ccxt
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+from config.crypto_universe import CRYPTO_UNIVERSE
+
+# ==========================================================
+# LOGGING
+# ==========================================================
+
+logger = logging.getLogger("Config")
+
+# ==========================================================
+# TELEGRAM
+# ==========================================================
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
 # ==========================================================
 # BOT SETTINGS
 # ==========================================================
 
-SCAN_INTERVAL = 60          # Seconds
+SCAN_INTERVAL = 60               # Seconds
 MIN_DAILY_SIGNALS = 3
 MAX_DAILY_SIGNALS = 4
 MAX_PAIRS = 100
 
 # ==========================================================
-# MEXC FUTURES
+# TIMEFRAMES
+# ==========================================================
+
+TREND_TIMEFRAME = "4h"
+BOS_TIMEFRAME = "4h"
+ENTRY_TIMEFRAME = "15m"
+
+# ==========================================================
+# RISK SETTINGS
+# ==========================================================
+
+DEFAULT_RISK_REWARD = 2
+MAX_STALE_ENTRY_PERCENT = 2.0
+
+# ==========================================================
+# MEXC EXCHANGE
 # ==========================================================
 
 exchange = ccxt.mexc(
     {
         "enableRateLimit": True,
+        "timeout": 30000,
         "options": {
             "defaultType": "swap",
         },
@@ -31,72 +67,61 @@ exchange = ccxt.mexc(
 )
 
 # ==========================================================
-# LOAD CRYPTO FUTURES
+# LOAD SYMBOLS
 # ==========================================================
 
-def get_symbols():
+def get_symbols() -> list[str]:
     """
-    Load the highest-volume MEXC USDT perpetual
-    cryptocurrency futures only.
+    Load approved USDT perpetual futures.
     """
 
-    print("Loading MEXC futures markets...")
+    logger.info("Loading MEXC perpetual futures...")
 
-    exchange.load_markets()
-    tickers = exchange.fetch_tickers()
+    try:
 
-    crypto_pairs = []
+        exchange.load_markets()
 
-    for symbol, market in exchange.markets.items():
+        symbols = []
 
-        # Only active markets
-        if not market.get("active", False):
-            continue
+        for symbol, market in exchange.markets.items():
 
-        # Only perpetual futures
-        if not market.get("swap", False):
-            continue
+            if not market.get("active"):
+                continue
 
-        # USDT quoted only
-        if market.get("quote") != "USDT":
-            continue
+            if not market.get("swap"):
+                continue
 
-        # Must have a crypto base asset
-        base = market.get("base")
-        if not base:
-            continue
+            if not market.get("linear"):
+                continue
 
-        # Skip leveraged tokens
-        if base.endswith(("3L", "3S", "5L", "5S")):
-            continue
+            if market.get("quote") != "USDT":
+                continue
 
-        # Ignore symbols with missing ticker data
-        ticker = tickers.get(symbol)
-        if ticker is None:
-            continue
+            base = str(
+                market.get("base", "")
+            ).upper()
 
-        volume = ticker.get("quoteVolume") or 0
+            if base not in CRYPTO_UNIVERSE:
+                continue
 
-        crypto_pairs.append(
-            (
-                symbol,
-                volume,
-            )
+            symbols.append(symbol)
+
+        symbols = sorted(set(symbols))
+
+        logger.info(
+            "Loaded %d trading pairs.",
+            len(symbols),
         )
 
-    crypto_pairs.sort(
-        key=lambda item: item[1],
-        reverse=True,
-    )
+        return symbols[:MAX_PAIRS]
 
-    selected = [
-        symbol
-        for symbol, _ in crypto_pairs[:MAX_PAIRS]
-    ]
+    except Exception:
 
-    print(f"Loaded {len(selected)} crypto futures pairs.")
+        logger.exception(
+            "Unable to load markets."
+        )
 
-    return selected
+        return []
 
 
 # ==========================================================
@@ -105,15 +130,19 @@ def get_symbols():
 
 SYMBOLS = get_symbols()
 
+
 # ==========================================================
-# STARTUP
+# STARTUP INFO
 # ==========================================================
 
-print("=" * 60)
-print("BLISSFINITY SIGNAL BOT")
-print("=" * 60)
-print(f"Pairs Loaded       : {len(SYMBOLS)}")
-print(f"Pairs Scanned      : {MAX_PAIRS}")
-print(f"Scan Interval      : {SCAN_INTERVAL} seconds")
-print(f"Daily Signals      : {MIN_DAILY_SIGNALS}-{MAX_DAILY_SIGNALS}")
-print("=" * 60)
+logger.info("=" * 60)
+logger.info("BLISSFINITY AI SIGNAL BOT")
+logger.info("=" * 60)
+logger.info("Trading Pairs : %d", len(SYMBOLS))
+logger.info("Scan Interval : %s seconds", SCAN_INTERVAL)
+logger.info(
+    "Daily Signals : %d - %d",
+    MIN_DAILY_SIGNALS,
+    MAX_DAILY_SIGNALS,
+)
+logger.info("=" * 60)

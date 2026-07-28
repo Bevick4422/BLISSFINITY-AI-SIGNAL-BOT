@@ -1,87 +1,125 @@
-
 """
-BLISSFINITY SIGNAL
-TELEGRAM MESSAGE FORMATTER
+=====================================================
+BLISSFINITY AI SIGNAL BOT
+Telegram Formatter
+=====================================================
 """
 
-from datetime import datetime
+from __future__ import annotations
 
+from datetime import UTC, datetime
+
+
+# =====================================================
+# TIME
+# =====================================================
+
+def utc_time() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+
+# =====================================================
+# DIRECTION EMOJI
+# =====================================================
+
+def direction_emoji(direction: str) -> str:
+    return "🟢" if direction.upper() == "BUY" else "🔴"
+
+
+# =====================================================
+# NEW SIGNAL
+# =====================================================
 
 def format_signal(signal: dict) -> str:
-    """
-    Format a new trading signal.
-    """
 
-    return f"""
-🚨 *BLISSFINITY SIGNAL*
+    symbol = signal.get("symbol") or signal.get("pair")
+    direction = signal.get("direction") or signal.get("side")
 
-📈 Pair:
-{signal["pair"]}
-
-{"🟢" if signal["side"].upper() == "BUY" else "🔴"} Direction:
-{signal["side"]}
-
-🎯 Entry:
-{signal["entry"]:.4f}
-
-🛑 Stop Loss:
-{signal["stop_loss"]:.4f}
-
-🥇 TP1:
-{signal["tp1"]:.4f}
-
-🥈 TP2:
-{signal["tp2"]:.4f}
-
-⚖ Risk : Reward
-1:{signal["rr"]}
-
-📊 Confidence
-{signal.get("confidence", 80)}%
-
-🕒 {datetime.now().strftime("%Y-%m-%d %H:%M")} UTC
-""".strip()
+    return (
+        f"🚨 *BLISSFINITY AI SIGNAL*\n\n"
+        f"📈 *Pair*\n"
+        f"`{symbol}`\n\n"
+        f"{direction_emoji(direction)} *Direction*\n"
+        f"{direction}\n\n"
+        f"🎯 *Entry*\n"
+        f"`{signal['entry']:.6f}`\n\n"
+        f"🛑 *Stop Loss*\n"
+        f"`{signal['stop_loss']:.6f}`\n\n"
+        f"🥇 *Take Profit 1*\n"
+        f"`{signal['tp1']:.6f}`\n\n"
+        f"🥈 *Take Profit 2*\n"
+        f"`{signal['tp2']:.6f}`\n\n"
+        f"⚖️ *Risk : Reward*\n"
+        f"1 : {signal.get('rr', 2)}\n\n"
+        f"📊 *Confidence*\n"
+        f"{signal.get('confidence',80)}%\n\n"
+        f"🕒 {utc_time()}"
+    )
 
 
-def format_entry(pair, side):
-    return f"""
-🟢 *ENTRY FILLED*
+# =====================================================
+# ENTRY
+# =====================================================
 
-📈 Pair:
-{pair}
+def format_entry(symbol: str, direction: str) -> str:
 
-{"🟢" if side.upper() == "BUY" else "🔴"} Direction:
-{side}
-
-Trade is now ACTIVE.
-""".strip()
-
-
-def format_tp(pair, side, level):
-    return f"""
-🎯 *TAKE PROFIT {level} HIT*
-
-📈 Pair:
-{pair}
-
-{"🟢" if side.upper() == "BUY" else "🔴"} Direction:
-{side}
-
-Congratulations! ✅
-""".strip()
+    return (
+        f"🟢 *ENTRY HIT*\n\n"
+        f"📈 Pair: `{symbol}`\n"
+        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
+        "Trade is now ACTIVE."
+    )
 
 
-def format_stop(pair, side):
-    return f"""
-🛑 *STOP LOSS HIT*
+# =====================================================
+# TAKE PROFIT
+# =====================================================
 
-📈 Pair:
-{pair}
+def format_tp(
+    symbol: str,
+    direction: str,
+    level: int,
+    rr: str,
+) -> str:
 
-{"🟢" if side.upper() == "BUY" else "🔴"} Direction:
-{side}
+    return (
+        f"🎯 *TAKE PROFIT {level}*\n\n"
+        f"📈 Pair: `{symbol}`\n"
+        f"{direction_emoji(direction)} Direction: *{direction}*\n"
+        f"⚖️ Reward: *{rr}*\n\n"
+        "Excellent execution 🚀"
+    )
 
-Risk managed.
 
-Waiting for the next setup.
-""".strip()
+# =====================================================
+# STOP LOSS
+# =====================================================
+
+def format_stop(
+    symbol: str,
+    direction: str,
+) -> str:
+
+    return (
+        f"🔴 *STOP LOSS HIT*\n\n"
+        f"📈 Pair: `{symbol}`\n"
+        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
+        "Trade closed."
+    )
+
+
+# =====================================================
+# BREAKEVEN
+# =====================================================
+
+def format_breakeven(
+    symbol: str,
+    direction: str,
+) -> str:
+
+    return (
+        f"⚪ *BREAKEVEN*\n\n"
+        f"📈 Pair: `{symbol}`\n"
+        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
+        "Trade closed at break-even."
+    )

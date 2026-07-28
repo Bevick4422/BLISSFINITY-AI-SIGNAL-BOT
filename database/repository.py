@@ -1,4 +1,3 @@
-
 """
 =====================================================
 BLISSFINITY AI SIGNAL BOT
@@ -8,10 +7,18 @@ SQLite Repository
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from database.database import get_connection
+
+
+# =====================================================
+# TIME
+# =====================================================
+
+def now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 # =====================================================
@@ -22,7 +29,7 @@ def save_signal(
     symbol: str,
     direction: str,
     setup: str | None,
-    entry_type: str | None,
+    entry_type: str |None,
     confidence: int | None,
 ) -> int:
 
@@ -48,7 +55,7 @@ def save_signal(
             setup,
             entry_type,
             confidence,
-            datetime.utcnow().isoformat(),
+            now(),
         ),
     )
 
@@ -69,6 +76,8 @@ def save_trade(trade: dict) -> int:
     conn = get_connection()
     cursor = conn.cursor()
 
+    timestamp = now()
+
     cursor.execute(
         """
         INSERT INTO trades
@@ -85,9 +94,13 @@ def save_trade(trade: dict) -> int:
             state,
             break_even,
             opened_at,
-            created_at
+            closed_at,
+            created_at,
+            updated_at,
+            result,
+            rr
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             trade["symbol"],
@@ -102,7 +115,11 @@ def save_trade(trade: dict) -> int:
             trade.get("state", "PENDING"),
             0,
             None,
-            datetime.utcnow().isoformat(),
+            None,
+            timestamp,
+            timestamp,
+            None,
+            None,
         ),
     )
 
@@ -140,31 +157,6 @@ def get_trade(trade_id: int) -> dict | None:
 
 
 # =====================================================
-# GET ACTIVE TRADES
-# =====================================================
-
-def get_active_trades() -> list[dict]:
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM trades
-        WHERE state IN ('PENDING', 'OPEN', 'TP1_HIT')
-        ORDER BY created_at ASC
-        """
-    )
-
-    rows = cursor.fetchall()
-
-    conn.close()
-
-    return [dict(row) for row in rows]
-
-
-# =====================================================
 # GET ACTIVE TRADE
 # =====================================================
 
@@ -181,8 +173,8 @@ def get_active_trade(
         SELECT *
         FROM trades
         WHERE symbol = ?
-          AND direction = ?
-          AND state IN ('PENDING', 'OPEN', 'TP1_HIT')
+        AND direction = ?
+        AND state IN ('PENDING','OPEN','TP1_HIT')
         LIMIT 1
         """,
         (
@@ -196,6 +188,31 @@ def get_active_trade(
     conn.close()
 
     return dict(row) if row else None
+
+
+# =====================================================
+# GET ACTIVE TRADES
+# =====================================================
+
+def get_active_trades() -> list[dict]:
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM trades
+        WHERE state IN ('PENDING','OPEN','TP1_HIT')
+        ORDER BY created_at ASC
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [dict(row) for row in rows]
 
 
 # =====================================================
@@ -222,12 +239,12 @@ def update_trade(
     if not fields:
         return False
 
-    fields["updated_at"] = datetime.utcnow().isoformat()
+    fields["updated_at"] = now()
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    columns = ", ".join(
+    assignments = ", ".join(
         f"{column} = ?"
         for column in fields.keys()
     )
@@ -238,18 +255,18 @@ def update_trade(
     cursor.execute(
         f"""
         UPDATE trades
-        SET {columns}
+        SET {assignments}
         WHERE id = ?
         """,
         values,
     )
 
-    updated = cursor.rowcount > 0
+    success = cursor.rowcount > 0
 
     conn.commit()
     conn.close()
 
-    return updated
+    return success
 
 
 # =====================================================
@@ -267,7 +284,7 @@ def close_trade(
         state="CLOSED",
         result=result,
         rr=rr,
-        closed_at=datetime.utcnow().isoformat(),
+        closed_at=now(),
     )
 
 

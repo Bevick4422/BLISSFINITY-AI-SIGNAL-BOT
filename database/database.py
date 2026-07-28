@@ -8,27 +8,33 @@ SQLite Database Connection
 from pathlib import Path
 import sqlite3
 
-# ----------------------------------------------------
-# Database Location
-# ----------------------------------------------------
+# =====================================================
+# DATABASE LOCATION
+# =====================================================
 
-DATABASE_FILE = (
-    Path(__file__).resolve().parent /
-    "blissfinity.db"
-)
+BASE_DIR = Path(__file__).resolve().parent
+
+DATABASE_FILE = BASE_DIR / "blissfinity.db"
 
 
-# ----------------------------------------------------
-# Connection
-# ----------------------------------------------------
+# =====================================================
+# DATABASE CONNECTION
+# =====================================================
 
-def get_connection():
+def get_connection() -> sqlite3.Connection:
+    """
+    Returns a SQLite connection configured for the bot.
+    """
 
-    connection = sqlite3.connect(
+    conn = sqlite3.connect(
         DATABASE_FILE,
         check_same_thread=False,
     )
 
-    connection.row_factory = sqlite3.Row
+    conn.row_factory = sqlite3.Row
 
-    return connection
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+
+    return conn
