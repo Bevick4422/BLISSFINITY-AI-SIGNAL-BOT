@@ -146,3 +146,9 @@ logger.info(
     MAX_DAILY_SIGNALS,
 )
 logger.info("=" * 60)
+
+# =====================================================
+# TRADE TRACKER
+# =====================================================
+
+TRACKER_INTERVAL = 15  # seconds

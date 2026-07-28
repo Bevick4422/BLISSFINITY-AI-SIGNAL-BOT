@@ -43,13 +43,21 @@ def create_tables() -> None:
 
         break_even INTEGER NOT NULL DEFAULT 0,
 
-        opened_at TEXT,
-        closed_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT,
+        tp1_hit INTEGER NOT NULL DEFAULT 0,
+        tp2_hit INTEGER NOT NULL DEFAULT 0,
 
         result TEXT,
-        rr REAL
+
+        rr REAL,
+        profit_percent REAL,
+        profit_usdt REAL,
+
+        opened_at TEXT,
+        closed_at TEXT,
+        duration_minutes INTEGER,
+
+        created_at TEXT NOT NULL,
+        updated_at TEXT
 
     )
     """)
@@ -85,14 +93,29 @@ def create_tables() -> None:
         id INTEGER PRIMARY KEY CHECK(id = 1),
 
         total_trades INTEGER NOT NULL DEFAULT 0,
+
+        open_trades INTEGER NOT NULL DEFAULT 0,
+        closed_trades INTEGER NOT NULL DEFAULT 0,
+
         wins INTEGER NOT NULL DEFAULT 0,
         losses INTEGER NOT NULL DEFAULT 0,
+        breakevens INTEGER NOT NULL DEFAULT 0,
 
         win_rate REAL NOT NULL DEFAULT 0,
+
+        total_rr REAL NOT NULL DEFAULT 0,
         average_rr REAL NOT NULL DEFAULT 0,
 
+        win_streak INTEGER NOT NULL DEFAULT 0,
+        loss_streak INTEGER NOT NULL DEFAULT 0,
+
+        best_win_streak INTEGER NOT NULL DEFAULT 0,
+        best_loss_streak INTEGER NOT NULL DEFAULT 0,
+
         best_pair TEXT,
-        best_entry TEXT
+        worst_pair TEXT,
+
+        average_duration INTEGER DEFAULT 0
 
     )
     """)

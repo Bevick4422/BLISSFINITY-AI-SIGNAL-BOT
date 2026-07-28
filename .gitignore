@@ -1,4 +1,3 @@
-
 # Python
 __pycache__/
 *.py[cod]
@@ -12,11 +11,13 @@ venv/
 
 # SQLite Database
 database/*.db
+database/*.db-shm
+database/*.db-wal
 
 # Runtime Data
 tracking/active_trades.json
 
-# Python caches
+# Python Caches
 .pytest_cache/
 .mypy_cache/
 
@@ -27,9 +28,9 @@ logs/
 # VS Code
 .vscode/
 
-# OS
+# Operating System
 .DS_Store
 Thumbs.db
 
-# Build artifacts
+# Build Artifacts
 *.zip

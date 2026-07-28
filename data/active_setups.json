@@ -440,17 +440,6 @@
         "created_at": null
     },
     {
-        "symbol": "LDO/USDT:USDT",
-        "direction": "SELL",
-        "setup": "A Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 0.4124,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": null
-    },
-    {
         "symbol": "UB/USDT:USDT",
         "direction": "SELL",
         "setup": "A Shape",
@@ -908,17 +897,6 @@
         "status": "WAITING_FOR_BOS",
         "method": "DAILY_REJECTION",
         "level": 0.2,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": null
-    },
-    {
-        "symbol": "DOT/USDT:USDT",
-        "direction": "BUY",
-        "setup": "V Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 0.7475,
         "bos": false,
         "signal_sent": false,
         "created_at": null

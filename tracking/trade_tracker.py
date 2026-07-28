@@ -2,6 +2,7 @@
 =====================================================
 BLISSFINITY AI SIGNAL BOT
 Trade Tracker
+Production Version
 =====================================================
 """
 
@@ -9,10 +10,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
+
+from config.settings import TRACKER_INTERVAL
 
 from database.repository import (
     get_active_trades,
-    update_trade,
+    get_trade,
+    open_trade,
+    mark_tp1_hit,
+    mark_tp2_hit,
+    move_to_break_even,
     close_trade,
 )
 
@@ -21,403 +29,722 @@ from market_data.fetcher import (
 )
 
 from telegram.sender import (
-    send_entry_message,
-    send_tp_message,
-    send_stop_message,
-    send_breakeven_message,
+    send_entry_hit,
+    send_tp1_hit,
+    send_tp2_hit,
+    send_stop_loss,
+    send_breakeven,
 )
 
-# =====================================================
-# CONFIGURATION
-# =====================================================
-
-CHECK_INTERVAL = 30  # Seconds
-
-logger = logging.getLogger("TradeTracker")
+logger = logging.getLogger(__name__)
 
 
 # =====================================================
-# DIRECTION HELPERS
+# TIME
 # =====================================================
 
-def is_buy(direction: str) -> bool:
-    return direction.upper() == "BUY"
+def utc_now() -> datetime:
+    """
+    Current UTC datetime.
+    """
 
-
-def is_sell(direction: str) -> bool:
-    return direction.upper() == "SELL"
+    return datetime.now(UTC)
 
 
 # =====================================================
-# PRICE CHECKS
+# DURATION
+# =====================================================
+
+def trade_duration_minutes(
+    opened_at: str,
+) -> int:
+    """
+    Calculate trade duration.
+    """
+
+    if not opened_at:
+        return 0
+
+    start = datetime.fromisoformat(opened_at)
+
+    return int(
+        (
+            utc_now() - start
+        ).total_seconds() / 60
+    )
+
+
+# =====================================================
+# PRICE HELPERS
+# =====================================================
+
+def is_buy(
+    trade: dict,
+) -> bool:
+
+    return trade["direction"].upper() == "BUY"
+
+
+def is_sell(
+    trade: dict,
+) -> bool:
+
+    return trade["direction"].upper() == "SELL"
+
+
+# =====================================================
+# ENTRY CHECK
 # =====================================================
 
 def entry_hit(
-    direction: str,
-    current_price: float,
-    entry: float,
+    trade: dict,
+    price: float,
 ) -> bool:
 
-    if is_buy(direction):
-        return current_price >= entry
+    entry = trade["entry"]
 
-    return current_price <= entry
+    if is_buy(trade):
 
+        return price <= entry
 
-def stop_hit(
-    direction: str,
-    current_price: float,
-    stop_loss: float,
-) -> bool:
-
-    if is_buy(direction):
-        return current_price <= stop_loss
-
-    return current_price >= stop_loss
-
-
-def target_hit(
-    direction: str,
-    current_price: float,
-    target: float,
-) -> bool:
-
-    if is_buy(direction):
-        return current_price >= target
-
-    return current_price <= target
+    return price >= entry
 
 
 # =====================================================
-# DATABASE HELPERS
+# TP1 CHECK
 # =====================================================
 
-def mark_trade_open(trade: dict) -> bool:
-    """
-    Mark trade as OPEN.
-    """
+def tp1_hit(
+    trade: dict,
+    price: float,
+) -> bool:
 
-    return update_trade(
-        trade["id"],
-        state="OPEN",
-        opened_at=None,
-    )
+    tp1 = trade["tp1"]
 
+    if is_buy(trade):
 
-def mark_tp1(trade: dict) -> bool:
-    """
-    Mark TP1 reached and activate break-even.
-    """
+        return price >= tp1
 
-    return update_trade(
-        trade["id"],
-        state="TP1_HIT",
-        break_even=1,
-        stop_loss=trade["entry"],
-    )
+    return price <= tp1
 
 
-def mark_closed(
+# =====================================================
+# TP2 CHECK
+# =====================================================
+
+def tp2_hit(
+    trade: dict,
+    price: float,
+) -> bool:
+
+    tp2 = trade["tp2"]
+
+    if is_buy(trade):
+
+        return price >= tp2
+
+    return price <= tp2
+
+
+# =====================================================
+# STOP LOSS CHECK
+# =====================================================
+
+def stop_loss_hit(
+    trade: dict,
+    price: float,
+) -> bool:
+
+    sl = trade["stop_loss"]
+
+    if is_buy(trade):
+
+        return price <= sl
+
+    return price >= sl
+
+
+# =====================================================
+# BREAKEVEN CHECK
+# =====================================================
+
+def breakeven_hit(
+    trade: dict,
+    price: float,
+) -> bool:
+
+    if not trade["break_even"]:
+        return False
+
+    entry = trade["entry"]
+
+    if is_buy(trade):
+
+        return price <= entry
+
+    return price >= entry
+
+
+# =====================================================
+# RR CALCULATION
+# =====================================================
+
+def calculate_rr(
     trade: dict,
     result: str,
-    rr: float,
-) -> bool:
-    """
-    Close trade.
-    """
+) -> float:
 
-    return close_trade(
-        trade["id"],
-        result=result,
-        rr=rr,
-    )
+    if result == "WIN":
 
+        return 2.0
 
+    if result == "LOSS":
+
+        return -1.0
+
+    return 0.0
 # =====================================================
-# DATA ACCESS
+# ENTRY ACTIVATION
 # =====================================================
 
-def load_active_trades() -> list[dict]:
+async def activate_trade(
+    trade: dict,
+) -> None:
     """
-    Load all active trades.
-    """
-
-    try:
-        return get_active_trades()
-
-    except Exception:
-        logger.exception("Failed loading active trades")
-        return []
-
-
-def get_live_price(symbol: str) -> float | None:
-    """
-    Fetch latest market price.
+    Mark trade as OPEN and notify Telegram.
     """
 
-    try:
-        return fetch_current_price(symbol)
+    trade_id = trade["id"]
 
-    except Exception:
-        logger.exception(f"Price fetch failed | {symbol}")
-        return None
-# =====================================================
-# ENTRY MONITOR
-# =====================================================
+    success = open_trade(trade_id)
 
-async def monitor_entry(trade: dict) -> bool:
-    """
-    Monitor pending trades and activate them once
-    the market reaches the entry price.
-    """
-
-    if trade["state"] != "PENDING":
-        return False
-
-    current_price = get_live_price(trade["symbol"])
-
-    if current_price is None:
-        return False
-
-    if not entry_hit(
-        trade["direction"],
-        current_price,
-        trade["entry"],
-    ):
-        return False
-
-    if not mark_trade_open(trade):
-        return False
-
-    trade["state"] = "OPEN"
-
-    await send_entry_message(
-        trade["symbol"],
-        trade["direction"],
-    )
+    if not success:
+        return
 
     logger.info(
-        "%s | Entry Triggered",
+        "%s ENTRY HIT",
         trade["symbol"],
     )
 
-    return True
+    try:
+        await send_entry_hit(trade)
+    except Exception:
+        logger.exception(
+            "Failed sending ENTRY notification."
+        )
 
 
 # =====================================================
-# TRADE MANAGEMENT
+# TP1 PROCESSING
 # =====================================================
 
-async def monitor_trade(trade: dict) -> bool:
+async def process_tp1(
+    trade: dict,
+) -> None:
     """
-    Manage active trades.
+    Handle TP1 event.
     """
 
-    if trade["state"] not in ("OPEN", "TP1_HIT"):
-        return False
+    trade_id = trade["id"]
 
-    current_price = get_live_price(trade["symbol"])
+    success = mark_tp1_hit(trade_id)
 
-    if current_price is None:
-        return False
+    if not success:
+        return
 
-    direction = trade["direction"]
+    move_to_break_even(trade_id)
 
-    # ==============================================
-    # STOP LOSS / BREAKEVEN
-    # ==============================================
+    logger.info(
+        "%s TP1 HIT",
+        trade["symbol"],
+    )
 
-    if stop_hit(
-        direction,
-        current_price,
-        trade["stop_loss"],
-    ):
-
-        result = (
-            "BREAKEVEN"
-            if trade.get("break_even")
-            else "LOSS"
+    try:
+        await send_tp1_hit(trade)
+    except Exception:
+        logger.exception(
+            "Failed sending TP1 notification."
         )
 
-        rr = 0 if result == "BREAKEVEN" else -1
 
-        mark_closed(
-            trade,
-            result=result,
-            rr=rr,
-        )
-
-        if result == "BREAKEVEN":
-
-            await send_breakeven_message(
-                trade["symbol"],
-                direction,
-            )
-
-        else:
-
-            await send_stop_message(
-                trade["symbol"],
-                direction,
-            )
-
-        logger.info(
-            "%s | %s",
-            trade["symbol"],
-            result,
-        )
-
-        return True
-
-    # ==============================================
-    # TAKE PROFIT 1
-    # ==============================================
-
-    if (
-        trade["state"] == "OPEN"
-        and target_hit(
-            direction,
-            current_price,
-            trade["tp1"],
-        )
-    ):
-
-        if not mark_tp1(trade):
-            return False
-
-        trade["state"] = "TP1_HIT"
-        trade["break_even"] = 1
-        trade["stop_loss"] = trade["entry"]
-
-        await send_tp_message(
-            trade["symbol"],
-            direction,
-            1,
-            "1R",
-        )
-
-        logger.info(
-            "%s | TP1 Hit",
-            trade["symbol"],
-        )
-
-        return True
-
-    # ==============================================
-    # TAKE PROFIT 2
-    # ==============================================
-
-    if target_hit(
-        direction,
-        current_price,
-        trade["tp2"],
-    ):
-
-        mark_closed(
-            trade,
-            result="WIN",
-            rr=2,
-        )
-
-        await send_tp_message(
-            trade["symbol"],
-            direction,
-            2,
-            "2R",
-        )
-
-        logger.info(
-            "%s | TP2 Hit",
-            trade["symbol"],
-        )
-
-        return True
-
-    return False
 # =====================================================
-# TRADE SCANNER
+# SINGLE TRADE CHECK
 # =====================================================
 
-async def check_active_trades() -> None:
+async def monitor_trade(
+    trade: dict,
+) -> None:
     """
-    Scan every active trade once.
+    Monitor one active trade.
     """
 
-    trades = load_active_trades()
+    try:
+
+        latest = get_trade(trade["id"])
+
+        if latest is None:
+            return
+
+        symbol = latest["symbol"]
+
+        price = await fetch_current_price(symbol)
+
+        if price is None:
+            return
+
+        state = latest["state"]
+
+        # --------------------------------------------
+        # Waiting For Entry
+        # --------------------------------------------
+
+        if state == "PENDING":
+
+            if entry_hit(
+                latest,
+                price,
+            ):
+                await activate_trade(latest)
+
+            return
+
+        # --------------------------------------------
+        # OPEN
+        # --------------------------------------------
+
+        if state == "OPEN":
+
+            if tp1_hit(
+                latest,
+                price,
+            ):
+                await process_tp1(latest)
+                return
+
+            if stop_loss_hit(
+                latest,
+                price,
+            ):
+                duration = trade_duration_minutes(
+                    latest["opened_at"],
+                )
+
+                close_trade(
+                    latest["id"],
+                    result="LOSS",
+                    rr=calculate_rr(
+                        latest,
+                        "LOSS",
+                    ),
+                    duration_minutes=duration,
+                )
+
+                logger.info(
+                    "%s STOP LOSS",
+                    symbol,
+                )
+
+                try:
+                    await send_stop_loss(latest)
+                except Exception:
+                    logger.exception(
+                        "Failed sending SL notification."
+                    )
+
+                return
+
+        # --------------------------------------------
+        # TP1 HIT
+        # --------------------------------------------
+
+        if state == "TP1_HIT":
+
+            if tp2_hit(
+                latest,
+                price,
+            ):
+                return
+
+            if breakeven_hit(
+                latest,
+                price,
+            ):
+                return
+
+    except Exception:
+
+        logger.exception(
+            "Trade tracker error."
+        )
+
+
+# =====================================================
+# MONITOR ALL TRADES
+# =====================================================
+
+async def monitor_all_trades() -> None:
+    """
+    Check every active trade.
+    """
+
+    trades = get_active_trades()
 
     if not trades:
         return
 
-    logger.info(
-        "Tracking %d active trade(s)...",
-        len(trades),
+    await asyncio.gather(
+        *[
+            monitor_trade(trade)
+            for trade in trades
+        ],
+        return_exceptions=True,
+    )
+# =====================================================
+# TP2 PROCESSING
+# =====================================================
+
+async def process_tp2(
+    trade: dict,
+) -> None:
+    """
+    Final target reached.
+    Close remaining position.
+    """
+
+    trade_id = trade["id"]
+
+    success = mark_tp2_hit(trade_id)
+
+    if not success:
+        return
+
+    duration = trade_duration_minutes(
+        trade["opened_at"],
     )
 
-    for trade in trades:
+    close_trade(
+        trade_id,
+        result="WIN",
+        rr=calculate_rr(
+            trade,
+            "WIN",
+        ),
+        duration_minutes=duration,
+    )
+
+    logger.info(
+        "%s TP2 HIT",
+        trade["symbol"],
+    )
+
+    try:
+        await send_tp2_hit(trade)
+
+    except Exception:
+
+        logger.exception(
+            "Failed sending TP2 notification."
+        )
+
+
+# =====================================================
+# BREAKEVEN PROCESSING
+# =====================================================
+
+async def process_breakeven(
+    trade: dict,
+) -> None:
+    """
+    Price returned to entry
+    after TP1.
+    """
+
+    duration = trade_duration_minutes(
+        trade["opened_at"],
+    )
+
+    close_trade(
+        trade["id"],
+        result="BREAKEVEN",
+        rr=calculate_rr(
+            trade,
+            "BREAKEVEN",
+        ),
+        duration_minutes=duration,
+    )
+
+    logger.info(
+        "%s BREAKEVEN",
+        trade["symbol"],
+    )
+
+    try:
+
+        await send_breakeven(trade)
+
+    except Exception:
+
+        logger.exception(
+            "Failed sending breakeven notification."
+        )
+
+
+# =====================================================
+# TP1 STATE MONITOR
+# =====================================================
+
+async def monitor_tp1_trade(
+    trade: dict,
+    price: float,
+) -> None:
+    """
+    Monitor trades that
+    already reached TP1.
+    """
+
+    if tp2_hit(
+        trade,
+        price,
+    ):
+
+        await process_tp2(
+            trade,
+        )
+
+        return
+
+    if breakeven_hit(
+        trade,
+        price,
+    ):
+
+        await process_breakeven(
+            trade,
+        )
+
+        return
+
+
+# =====================================================
+# OPEN STATE MONITOR
+# =====================================================
+
+async def monitor_open_trade(
+    trade: dict,
+    price: float,
+) -> None:
+    """
+    Monitor active trades.
+    """
+
+    if tp1_hit(
+        trade,
+        price,
+    ):
+
+        await process_tp1(
+            trade,
+        )
+
+        return
+
+    if stop_loss_hit(
+        trade,
+        price,
+    ):
+
+        duration = trade_duration_minutes(
+            trade["opened_at"],
+        )
+
+        close_trade(
+            trade["id"],
+            result="LOSS",
+            rr=calculate_rr(
+                trade,
+                "LOSS",
+            ),
+            duration_minutes=duration,
+        )
+
+        logger.info(
+            "%s STOP LOSS",
+            trade["symbol"],
+        )
 
         try:
 
-            # -----------------------------------------
-            # Pending Trades
-            # -----------------------------------------
-
-            if trade["state"] == "PENDING":
-
-                activated = await monitor_entry(trade)
-
-                if activated:
-                    continue
-
-            # -----------------------------------------
-            # Active Trades
-            # -----------------------------------------
-
-            await monitor_trade(trade)
+            await send_stop_loss(
+                trade,
+            )
 
         except Exception:
 
             logger.exception(
-                "Trade Tracker Error | %s",
-                trade.get("symbol", "UNKNOWN"),
+                "Failed sending stop loss notification."
             )
 
+        return
+
 
 # =====================================================
-# MAIN LOOP
+# ENTRY STATE MONITOR
 # =====================================================
 
-async def run_trade_tracker() -> None:
+async def monitor_pending_trade(
+    trade: dict,
+    price: float,
+) -> None:
     """
-    Continuously monitor all active trades.
+    Waiting for entry.
     """
 
-    logger.info("Trade Tracker Started")
+    if entry_hit(
+        trade,
+        price,
+    ):
+
+        await activate_trade(
+            trade,
+        )
+# =====================================================
+# TRADE DISPATCHER
+# =====================================================
+
+async def monitor_trade(
+    trade: dict,
+) -> None:
+    """
+    Monitor a single trade.
+    """
+
+    try:
+
+        latest = get_trade(
+            trade["id"],
+        )
+
+        if latest is None:
+            return
+
+        price = await fetch_current_price(
+            latest["symbol"],
+        )
+
+        if price is None:
+            return
+
+        state = latest["state"]
+
+        if state == "PENDING":
+
+            await monitor_pending_trade(
+                latest,
+                price,
+            )
+
+            return
+
+        if state == "OPEN":
+
+            await monitor_open_trade(
+                latest,
+                price,
+            )
+
+            return
+
+        if state == "TP1_HIT":
+
+            await monitor_tp1_trade(
+                latest,
+                price,
+            )
+
+            return
+
+    except asyncio.CancelledError:
+        raise
+
+    except Exception:
+
+        logger.exception(
+            "Error monitoring %s",
+            trade["symbol"],
+        )
+
+
+# =====================================================
+# MONITOR ALL ACTIVE TRADES
+# =====================================================
+
+async def monitor_all_trades() -> None:
+    """
+    Monitor every active trade concurrently.
+    """
+
+    trades = get_active_trades()
+
+    if not trades:
+        return
+
+    await asyncio.gather(
+        *[
+            monitor_trade(trade)
+            for trade in trades
+        ],
+        return_exceptions=True,
+    )
+
+
+# =====================================================
+# TRACKER LOOP
+# =====================================================
+
+async def tracker_loop() -> None:
+    """
+    Main tracking loop.
+    """
+
+    logger.info(
+        "Trade Tracker Started"
+    )
 
     while True:
 
         try:
 
-            await check_active_trades()
+            await monitor_all_trades()
+
+        except asyncio.CancelledError:
+            raise
 
         except Exception:
 
             logger.exception(
-                "Unexpected tracker failure"
+                "Trade Tracker Loop Error"
             )
 
         await asyncio.sleep(
-            CHECK_INTERVAL
+            TRACKER_INTERVAL
         )
+
+
+# =====================================================
+# ENTRY POINT
+# =====================================================
+
+async def run_trade_tracker() -> None:
+    """
+    Entry point used by main.py
+    """
+
+    await tracker_loop()
 
 
 # =====================================================
 # MANUAL TEST
 # =====================================================
-
-async def _main() -> None:
-
-    await run_trade_tracker()
-
 
 if __name__ == "__main__":
 
@@ -426,4 +753,6 @@ if __name__ == "__main__":
         format="%(asctime)s | %(levelname)s | %(message)s",
     )
 
-    asyncio.run(_main())
+    asyncio.run(
+        run_trade_tracker()
+    )
