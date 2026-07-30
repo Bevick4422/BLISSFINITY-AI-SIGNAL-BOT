@@ -1,7 +1,7 @@
 
 """
 =====================================================
-BLISSFINITY AI SIGNAL BOT
+BLISSFINITY SIGNAL
 Telegram Sender
 Production Version
 =====================================================
@@ -385,7 +385,7 @@ async def send_test_message() -> bool:
 
     return await send_message(
         """
-✅ *BLISSFINITY AI SIGNAL BOT*
+✅ *BLISSFINITY SIGNAL*
 
 Telegram connection successful.
 
@@ -405,7 +405,7 @@ async def send_startup_message() -> bool:
 
     return await send_message(
         """
-🚀 *BLISSFINITY AI SIGNAL BOT*
+🚀 *BLISSFINITY SIGNAL*
 
 Production Version
 
@@ -429,7 +429,7 @@ async def send_shutdown_message() -> bool:
 
     return await send_message(
         """
-🛑 *BLISSFINITY AI SIGNAL BOT*
+🛑 *BLISSFINITY SIGNAL*
 
 Bot stopped.
 

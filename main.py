@@ -1,7 +1,7 @@
 
 """
 =====================================================
-BLISSFINITY AI SIGNAL BOT
+BLISSFINITY SIGNAL BOT
 Production Main
 =====================================================
 """
@@ -95,7 +95,7 @@ def daily_limit_reached():
 def startup():
 
     print("\n" + "=" * 60)
-    print("BLISSFINITY AI SIGNAL BOT")
+    print("BLISSFINITY SIGNALS")
     print("Production Version")
     print("=" * 60 + "\n")
 
