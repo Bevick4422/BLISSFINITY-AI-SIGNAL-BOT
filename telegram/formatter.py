@@ -40,13 +40,13 @@ def format_signal(signal: dict) -> str:
         symbol = symbol.replace(":USDT", "")
 
     return (
-        f"🚨 *BLISSFINITY*\n\n"
+        f"🚨 *BLISSFINITY SIGNAL*\n\n"
         f"📈 *Pair:* `{symbol}`\n"
         f"{direction_emoji(direction)} *Direction:* *{direction}*\n\n"
         f"💰 *Entry:* `{signal['entry']:.6f}`\n"
         f"🛑 *Stop Loss:* `{signal['stop_loss']:.6f}`\n\n"
-        f"🎯 *TP1:* `{signal['tp1']:.6f}`\n"
-        f"🎯 *TP2:* `{signal['tp2']:.6f}`\n\n"
+        f"🎯 *Take Profit 1:* `{signal['tp1']:.6f}`\n"
+        f"🎯 *Take Profit 2:* `{signal['tp2']:.6f}`\n\n"
         f"⚖️ *Risk : Reward:* 1:{signal.get('rr', 2)}\n"
         f"📊 *Confidence:* {signal.get('confidence', 80)}%\n\n"
         f"🕒 {utc_time()}"
