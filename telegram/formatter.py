@@ -35,27 +35,22 @@ def format_signal(signal: dict) -> str:
     symbol = signal.get("symbol") or signal.get("pair")
     direction = signal.get("direction") or signal.get("side")
 
+    # Clean symbols like RUNE/USDT:USDT -> RUNE/USDT
+    if symbol and ":USDT" in symbol:
+        symbol = symbol.replace(":USDT", "")
+
     return (
-        f"🚨 *BLISSFINITY AI SIGNAL*\n\n"
-        f"📈 *Pair*\n"
-        f"`{symbol}`\n\n"
-        f"{direction_emoji(direction)} *Direction*\n"
-        f"{direction}\n\n"
-        f"🎯 *Entry*\n"
-        f"`{signal['entry']:.6f}`\n\n"
-        f"🛑 *Stop Loss*\n"
-        f"`{signal['stop_loss']:.6f}`\n\n"
-        f"🥇 *Take Profit 1*\n"
-        f"`{signal['tp1']:.6f}`\n\n"
-        f"🥈 *Take Profit 2*\n"
-        f"`{signal['tp2']:.6f}`\n\n"
-        f"⚖️ *Risk : Reward*\n"
-        f"1 : {signal.get('rr', 2)}\n\n"
-        f"📊 *Confidence*\n"
-        f"{signal.get('confidence',80)}%\n\n"
+        f"🚨 *BLISSFINITY*\n\n"
+        f"📈 *Pair:* `{symbol}`\n"
+        f"{direction_emoji(direction)} *Direction:* *{direction}*\n\n"
+        f"💰 *Entry:* `{signal['entry']:.6f}`\n"
+        f"🛑 *Stop Loss:* `{signal['stop_loss']:.6f}`\n\n"
+        f"🎯 *TP1:* `{signal['tp1']:.6f}`\n"
+        f"🎯 *TP2:* `{signal['tp2']:.6f}`\n\n"
+        f"⚖️ *Risk : Reward:* 1:{signal.get('rr', 2)}\n"
+        f"📊 *Confidence:* {signal.get('confidence', 80)}%\n\n"
         f"🕒 {utc_time()}"
     )
-
 
 # =====================================================
 # ENTRY
