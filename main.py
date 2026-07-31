@@ -41,7 +41,13 @@ from telegram.sender import (
     send_signal,
 )
 
+from utils.trade_validator import (
+    validate_trade,
+)
 
+from utils.anti_spam import (
+    is_duplicate_signal,
+)
 # =====================================================
 # LOGGER
 # =====================================================
@@ -119,10 +125,18 @@ async def scan_symbol(symbol):
 
         logger.info("Scanning %s", symbol)
 
+        # ---------------------------------
+        # Fetch Market Data
+        # ---------------------------------
+
         market = fetch_market_data(symbol)
 
         if market is None:
             return
+
+        # ---------------------------------
+        # Generate Signal
+        # ---------------------------------
 
         signal = evaluate_symbol(
             symbol=symbol,
@@ -132,12 +146,52 @@ async def scan_symbol(symbol):
         if signal is None:
             return
 
+        # ---------------------------------
+        # Validate Trade
+        # ---------------------------------
+
+        if not validate_trade(signal):
+
+            logger.warning(
+                "Invalid signal rejected for %s",
+                symbol,
+            )
+
+            return
+
+        # ---------------------------------
+        # Prevent Duplicate Signals
+        # ---------------------------------
+
+        if is_duplicate_signal(signal):
+
+            logger.info(
+                "Duplicate signal skipped for %s",
+                symbol,
+            )
+
+            return
+
+        # ---------------------------------
+        # Save Trade
+        # ---------------------------------
+
         trade_id = add_trade(signal)
 
         if trade_id is None:
+
+            logger.warning(
+                "Failed to save trade for %s",
+                symbol,
+            )
+
             return
 
         signal["trade_id"] = trade_id
+
+        # ---------------------------------
+        # Send Telegram Signal
+        # ---------------------------------
 
         await send_signal(signal)
 
@@ -155,8 +209,6 @@ async def scan_symbol(symbol):
             "%s Scan Failed",
             symbol,
         )
-
-
 # =====================================================
 # SCAN MARKET
 # =====================================================
