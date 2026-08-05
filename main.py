@@ -1,7 +1,7 @@
 
 """
 =====================================================
-BLISSFINITY SIGNAL BOT
+BLISSFINITY SIGNAL
 Production Main
 =====================================================
 """
@@ -48,6 +48,10 @@ from utils.trade_validator import (
 from utils.anti_spam import (
     is_duplicate_signal,
 )
+from reports.report_scheduler import (
+    run_report_scheduler,
+)
+
 # =====================================================
 # LOGGER
 # =====================================================
@@ -265,14 +269,10 @@ async def main():
     startup()
 
     await asyncio.gather(
-
         run_scanner(),
-
         run_trade_tracker(),
-
+        run_report_scheduler(),
     )
-
-
 # =====================================================
 # ENTRY POINT
 # =====================================================
