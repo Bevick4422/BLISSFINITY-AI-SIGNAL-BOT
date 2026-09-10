@@ -10,20 +10,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 import aiohttp
 
 from config.settings import (
     TELEGRAM_CHAT_ID,
+    TELEGRAM_COMMUNITY_CHAT_ID,
     TELEGRAM_TOKEN,
 )
 
 from telegram.formatter import (
-    format_signal,
-    format_entry,
-    format_tp,
-    format_stop,
     format_breakeven,
+    format_entry,
+    format_signal,
+    format_stop,
+    format_tp,
 )
 
 
@@ -38,8 +40,42 @@ BASE_URL = (
 
 REQUEST_TIMEOUT = 15
 MAX_RETRIES = 3
+RETRY_DELAY = 2
 
 logger = logging.getLogger("Telegram")
+
+
+# =====================================================
+# DESTINATIONS
+# =====================================================
+
+def get_chat_ids() -> list[str]:
+    """
+    Return all configured Telegram destinations.
+
+    Duplicate or empty chat IDs are removed.
+    """
+
+    chat_ids = [
+        TELEGRAM_CHAT_ID,
+        TELEGRAM_COMMUNITY_CHAT_ID,
+    ]
+
+    unique_chat_ids: list[str] = []
+
+    for chat_id in chat_ids:
+        if not chat_id:
+            continue
+
+        normalized_chat_id = str(chat_id).strip()
+
+        if not normalized_chat_id:
+            continue
+
+        if normalized_chat_id not in unique_chat_ids:
+            unique_chat_ids.append(normalized_chat_id)
+
+    return unique_chat_ids
 
 
 # =====================================================
@@ -48,71 +84,100 @@ logger = logging.getLogger("Telegram")
 
 async def send_message(text: str) -> bool:
     """
-    Send a Telegram Markdown message.
+    Send one message to every configured Telegram destination.
+
+    Returns True only when the message is successfully sent
+    to all configured destinations.
     """
 
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-
-        logger.warning(
-            "Telegram credentials missing."
-        )
-
+    if not TELEGRAM_TOKEN:
+        logger.warning("Telegram token is missing.")
         return False
 
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": True,
-    }
+    if not text or not text.strip():
+        logger.warning("Telegram message is empty.")
+        return False
+
+    chat_ids = get_chat_ids()
+
+    if not chat_ids:
+        logger.warning("No Telegram chat IDs are configured.")
+        return False
 
     timeout = aiohttp.ClientTimeout(
         total=REQUEST_TIMEOUT
     )
 
-    for attempt in range(MAX_RETRIES):
+    overall_success = True
 
-        try:
+    async with aiohttp.ClientSession(
+        timeout=timeout
+    ) as session:
 
-            async with aiohttp.ClientSession(
-                timeout=timeout
-            ) as session:
+        for chat_id in chat_ids:
 
-                async with session.post(
-                    BASE_URL,
-                    json=payload,
-                ) as response:
+            payload = {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": True,
+            }
 
-                    if response.status == 200:
+            destination_success = False
 
-                        logger.info(
-                            "Telegram message sent successfully."
+            for attempt in range(1, MAX_RETRIES + 1):
+
+                try:
+                    async with session.post(
+                        BASE_URL,
+                        json=payload,
+                    ) as response:
+
+                        if response.status == 200:
+                            destination_success = True
+
+                            logger.info(
+                                "Telegram message sent to %s.",
+                                chat_id,
+                            )
+
+                            break
+
+                        error_text = await response.text()
+
+                        logger.error(
+                            "Telegram error for %s "
+                            "(attempt %s/%s): %s",
+                            chat_id,
+                            attempt,
+                            MAX_RETRIES,
+                            error_text,
                         )
 
-                        return True
+                except asyncio.CancelledError:
+                    raise
 
-                    error_text = await response.text()
-
-                    logger.error(
-                        "Telegram Error (%s/%s): %s",
-                        attempt + 1,
+                except Exception:
+                    logger.exception(
+                        "Telegram request failed for %s "
+                        "(attempt %s/%s).",
+                        chat_id,
+                        attempt,
                         MAX_RETRIES,
-                        error_text,
                     )
 
-        except Exception:
+                if attempt < MAX_RETRIES:
+                    await asyncio.sleep(RETRY_DELAY)
 
-            logger.exception(
-                "Telegram request failed (%s/%s)",
-                attempt + 1,
-                MAX_RETRIES,
-            )
+            if not destination_success:
+                overall_success = False
 
-        if attempt < MAX_RETRIES - 1:
+                logger.error(
+                    "Telegram message failed for destination %s.",
+                    chat_id,
+                )
 
-            await asyncio.sleep(2)
-
-    return False
+    return overall_success
 
 
 # =====================================================
@@ -120,15 +185,15 @@ async def send_message(text: str) -> bool:
 # =====================================================
 
 async def send_signal(
-    signal: dict,
+    signal: dict[str, Any],
 ) -> bool:
     """
     Send a new trading signal.
     """
 
-    return await send_message(
-        format_signal(signal)
-    )
+    message = format_signal(signal)
+
+    return await send_message(message)
 
 
 # =====================================================
@@ -136,28 +201,21 @@ async def send_signal(
 # =====================================================
 
 async def send_entry_hit(
-    trade: dict,
+    trade: dict[str, Any],
 ) -> bool:
     """
     Notify that trade entry has been reached.
     """
 
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
+    symbol = trade.get("symbol", "UNKNOWN")
+    direction = trade.get("direction", "UNKNOWN")
+
+    message = format_entry(
+        symbol,
+        direction,
     )
 
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
-
-    return await send_message(
-        format_entry(
-            symbol,
-            direction,
-        )
-    )
+    return await send_message(message)
 
 
 # =====================================================
@@ -165,30 +223,23 @@ async def send_entry_hit(
 # =====================================================
 
 async def send_tp1_hit(
-    trade: dict,
+    trade: dict[str, Any],
 ) -> bool:
     """
     Notify that TP1 has been reached.
     """
 
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
+    symbol = trade.get("symbol", "UNKNOWN")
+    direction = trade.get("direction", "UNKNOWN")
+
+    message = format_tp(
+        symbol,
+        direction,
+        1,
+        "2R",
     )
 
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
-
-    return await send_message(
-        format_tp(
-            symbol,
-            direction,
-            1,
-            "2R",
-        )
-    )
+    return await send_message(message)
 
 
 # =====================================================
@@ -196,30 +247,23 @@ async def send_tp1_hit(
 # =====================================================
 
 async def send_tp2_hit(
-    trade: dict,
+    trade: dict[str, Any],
 ) -> bool:
     """
     Notify that TP2 has been reached.
     """
 
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
+    symbol = trade.get("symbol", "UNKNOWN")
+    direction = trade.get("direction", "UNKNOWN")
+
+    message = format_tp(
+        symbol,
+        direction,
+        2,
+        "3R",
     )
 
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
-
-    return await send_message(
-        format_tp(
-            symbol,
-            direction,
-            2,
-            "3R",
-        )
-    )
+    return await send_message(message)
 
 
 # =====================================================
@@ -227,28 +271,21 @@ async def send_tp2_hit(
 # =====================================================
 
 async def send_stop_loss(
-    trade: dict,
+    trade: dict[str, Any],
 ) -> bool:
     """
     Notify that stop loss has been triggered.
     """
 
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
+    symbol = trade.get("symbol", "UNKNOWN")
+    direction = trade.get("direction", "UNKNOWN")
+
+    message = format_stop(
+        symbol,
+        direction,
     )
 
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
-
-    return await send_message(
-        format_stop(
-            symbol,
-            direction,
-        )
-    )
+    return await send_message(message)
 
 
 # =====================================================
@@ -256,28 +293,21 @@ async def send_stop_loss(
 # =====================================================
 
 async def send_breakeven(
-    trade: dict,
+    trade: dict[str, Any],
 ) -> bool:
     """
     Notify that trade has closed at breakeven.
     """
 
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
+    symbol = trade.get("symbol", "UNKNOWN")
+    direction = trade.get("direction", "UNKNOWN")
+
+    message = format_breakeven(
+        symbol,
+        direction,
     )
 
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
-
-    return await send_message(
-        format_breakeven(
-            symbol,
-            direction,
-        )
-    )
+    return await send_message(message)
 
 
 # =====================================================
@@ -286,46 +316,19 @@ async def send_breakeven(
 
 async def send_custom_report(
     title: str,
-    report: dict,
+    report: dict[str, Any],
 ) -> bool:
     """
     Send performance statistics.
     """
 
-    total = report.get(
-        "total",
-        0,
-    )
-
-    wins = report.get(
-        "wins",
-        0,
-    )
-
-    losses = report.get(
-        "losses",
-        0,
-    )
-
-    breakevens = report.get(
-        "breakevens",
-        0,
-    )
-
-    win_rate = report.get(
-        "win_rate",
-        0,
-    )
-
-    total_rr = report.get(
-        "total_rr",
-        0,
-    )
-
-    average_rr = report.get(
-        "average_rr",
-        0,
-    )
+    total = report.get("total", 0)
+    wins = report.get("wins", 0)
+    losses = report.get("losses", 0)
+    breakevens = report.get("breakevens", 0)
+    win_rate = report.get("win_rate", 0)
+    total_rr = report.get("total_rr", 0)
+    average_rr = report.get("average_rr", 0)
 
     message = (
         f"📊 *{title}*\n\n"
@@ -338,9 +341,7 @@ async def send_custom_report(
         f"Average R: *{average_rr:.2f}R*"
     )
 
-    return await send_message(
-        message
-    )
+    return await send_message(message)
 
 
 # =====================================================
@@ -352,11 +353,13 @@ async def send_test_message() -> bool:
     Verify Telegram connectivity.
     """
 
-    return await send_message(
+    message = (
         "✅ *BLISSFINITY SIGNAL*\n\n"
         "Telegram connection successful.\n\n"
         "Bot is online and ready."
     )
+
+    return await send_message(message)
 
 
 # =====================================================
@@ -368,13 +371,15 @@ async def send_startup_message() -> bool:
     Notify when the bot starts.
     """
 
-    return await send_message(
+    message = (
         "🚀 *BLISSFINITY SIGNAL*\n\n"
         "Production Version\n\n"
         "Scanner Started\n"
         "Trade Tracker Started\n\n"
         "Monitoring markets..."
     )
+
+    return await send_message(message)
 
 
 # =====================================================
@@ -386,11 +391,13 @@ async def send_shutdown_message() -> bool:
     Notify when the bot stops.
     """
 
-    return await send_message(
+    message = (
         "🛑 *BLISSFINITY SIGNAL*\n\n"
         "Bot stopped.\n\n"
         "Monitoring paused."
     )
+
+    return await send_message(message)
 
 
 # =====================================================
@@ -399,10 +406,10 @@ async def send_shutdown_message() -> bool:
 
 async def send_heartbeat() -> bool:
     """
-    Optional system heartbeat.
+    Send an optional system heartbeat.
     """
 
-    return await send_message(
+    message = (
         "💚 *Bot Status*\n\n"
         "System Online\n\n"
         "Scanner Running\n"
@@ -410,12 +417,15 @@ async def send_heartbeat() -> bool:
         "No issues detected."
     )
 
+    return await send_message(message)
+
+
 # =====================================================
 # WEEKLY REPORT
 # =====================================================
 
 async def send_weekly_report(
-    report: dict,
+    report: dict[str, Any],
 ) -> bool:
     """
     Send weekly performance report.
