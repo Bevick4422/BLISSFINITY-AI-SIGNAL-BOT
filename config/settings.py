@@ -36,6 +36,11 @@ TELEGRAM_CHAT_ID = os.getenv(
     "",
 ).strip()
 
+TELEGRAM_COMMUNITY_CHAT_ID = os.getenv(
+    "TELEGRAM_COMMUNITY_CHAT_ID",
+    "",
+).strip()
+
 
 # ==========================================================
 # BOT SETTINGS
