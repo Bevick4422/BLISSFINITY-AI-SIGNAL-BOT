@@ -42,39 +42,32 @@ INFO_COLOR = 0x5865F2
 # TEXT HELPERS
 # =====================================================
 
-def _extract(
+def _normalize_text(
     text: str,
-    label: str,
-) -> str | None:
+) -> str:
     """
-    Extract a single line value from a formatted
-    signal message.
-
-    Example:
-        Entry: 0.497100
+    Normalize Telegram/Discord formatting so the
+    parser can reliably read the production signal.
     """
 
-    pattern = (
-        rf"(?im)^\s*{re.escape(label)}\s*:\s*(.+?)\s*$"
+    text = text.replace(
+        "\r\n",
+        "\n",
     )
 
-    match = re.search(
-        pattern,
-        text,
+    text = text.replace(
+        "\r",
+        "\n",
     )
 
-    if not match:
-        return None
-
-    return match.group(1).strip()
+    return text.strip()
 
 
 def _clean_markdown(
     text: str,
 ) -> str:
     """
-    Remove Telegram-style Markdown so Discord
-    can format the message cleanly.
+    Remove Telegram-style Markdown.
     """
 
     text = text.replace(
@@ -100,20 +93,158 @@ def _clean_markdown(
     return text.strip()
 
 
+def _extract_value(
+    text: str,
+    label: str,
+) -> str | None:
+    """
+    Extract values from both supported formats.
+
+    Format 1:
+        Entry: 0.492000
+
+    Format 2:
+        🎯 Entry
+        0.492000
+    """
+
+    normalized = _normalize_text(
+        text
+    )
+
+    # -------------------------------------------------
+    # FORMAT 1
+    # Label: Value
+    # -------------------------------------------------
+
+    pattern_colon = (
+        rf"(?im)^\s*"
+        rf"(?:[^\w\n]*)?"
+        rf"{re.escape(label)}"
+        rf"\s*:\s*(.+?)\s*$"
+    )
+
+    match = re.search(
+        pattern_colon,
+        normalized,
+    )
+
+    if match:
+        return _clean_markdown(
+            match.group(1)
+        )
+
+    # -------------------------------------------------
+    # FORMAT 2
+    # Label
+    # Value
+    # -------------------------------------------------
+
+    pattern_separate = (
+        rf"(?im)^\s*"
+        rf"(?:[^\w\n]*)?"
+        rf"{re.escape(label)}"
+        rf"\s*$"
+        rf"\n"
+        rf"\s*(?:[^\w\n]*)?"
+        rf"(.+?)"
+        rf"\s*$"
+    )
+
+    match = re.search(
+        pattern_separate,
+        normalized,
+    )
+
+    if match:
+        return _clean_markdown(
+            match.group(1)
+        )
+
+    return None
+
+
+def _extract_pair(
+    text: str,
+) -> str:
+    """
+    Extract the trading pair.
+    """
+
+    value = (
+        _extract_value(
+            text,
+            "Symbol",
+        )
+        or _extract_value(
+            text,
+            "Pair",
+        )
+    )
+
+    if value:
+        return value
+
+    # -------------------------------------------------
+    # Fallback:
+    # Search for a standard USDT pair.
+    # -------------------------------------------------
+
+    match = re.search(
+        r"\b([A-Z0-9]{2,20}/USDT(?::USDT)?)\b",
+        text.upper(),
+    )
+
+    if match:
+        return match.group(1)
+
+    return "UNKNOWN"
+
+
 def _is_signal(
     text: str,
 ) -> bool:
     """
-    Detect whether the message is a trading signal.
+    Detect the actual production signal format.
+
+    We deliberately support both:
+        Direction: BUY
+
+    and:
+
+        Direction
+        BUY
     """
 
-    normalized = text.upper()
+    normalized = _normalize_text(
+        text
+    ).upper()
+
+    has_signal_title = (
+        "BLISSFINITY SIGNAL" in normalized
+    )
+
+    has_direction = (
+        _extract_value(
+            normalized,
+            "Direction",
+        )
+        is not None
+    )
+
+    has_entry = (
+        _extract_value(
+            normalized,
+            "Entry",
+        )
+        is not None
+    )
 
     return (
-        "BLISSFINITY SIGNAL" in normalized
+        has_signal_title
         and (
-            "DIRECTION:" in normalized
-            or "ENTRY:" in normalized
+            has_direction
+            or has_entry
         )
     )
 
@@ -126,64 +257,81 @@ def _build_signal_embed(
     text: str,
 ) -> dict[str, Any]:
     """
-    Convert the existing signal text into a
-    professional Discord trading embed.
+    Convert the production signal message into
+    the approved Discord embed format.
     """
 
-    symbol = _extract(
-        text,
-        "Symbol",
-    ) or _extract(
-        text,
-        "Pair",
-    ) or "UNKNOWN"
+    symbol = _extract_pair(
+        text
+    )
 
-    direction = _extract(
-        text,
-        "Direction",
-    ) or "UNKNOWN"
+    direction = (
+        _extract_value(
+            text,
+            "Direction",
+        )
+        or "UNKNOWN"
+    )
 
-    entry = _extract(
+    entry = _extract_value(
         text,
         "Entry",
     )
 
-    stop_loss = _extract(
+    stop_loss = _extract_value(
         text,
         "Stop Loss",
     )
 
-    tp1 = _extract(
+    tp1 = _extract_value(
+        text,
+        "Take Profit 1",
+    ) or _extract_value(
         text,
         "TP1",
     )
 
-    tp2 = _extract(
+    tp2 = _extract_value(
+        text,
+        "Take Profit 2",
+    ) or _extract_value(
         text,
         "TP2",
     )
 
-    rr = _extract(
+    rr = _extract_value(
+        text,
+        "Risk / Reward",
+    ) or _extract_value(
         text,
         "RR",
     )
 
-    confidence = _extract(
+    confidence = _extract_value(
         text,
         "Confidence",
     )
 
-    direction_upper = direction.upper()
+    direction_upper = (
+        direction.upper()
+    )
+
+    # -------------------------------------------------
+    # DIRECTION STYLE
+    # -------------------------------------------------
 
     if direction_upper == "BUY":
+
         direction_icon = "🟢"
         color = BUY_COLOR
 
     elif direction_upper == "SELL":
+
         direction_icon = "🔴"
         color = SELL_COLOR
 
     else:
+
         direction_icon = "⚪"
         color = INFO_COLOR
 
@@ -194,6 +342,7 @@ def _build_signal_embed(
     # -------------------------------------------------
 
     if entry:
+
         fields.append(
             {
                 "name": "🎯 Entry",
@@ -207,6 +356,7 @@ def _build_signal_embed(
     # -------------------------------------------------
 
     if stop_loss:
+
         fields.append(
             {
                 "name": "🛑 Stop Loss",
@@ -220,6 +370,7 @@ def _build_signal_embed(
     # -------------------------------------------------
 
     if tp1:
+
         fields.append(
             {
                 "name": "💰 Take Profit 1",
@@ -233,6 +384,7 @@ def _build_signal_embed(
     # -------------------------------------------------
 
     if tp2:
+
         fields.append(
             {
                 "name": "💰 Take Profit 2",
@@ -246,10 +398,35 @@ def _build_signal_embed(
     # -------------------------------------------------
 
     if rr:
+
+        clean_rr = (
+            rr
+            .replace(
+                "R",
+                "",
+            )
+            .replace(
+                "r",
+                "",
+            )
+            .strip()
+        )
+
+        # Avoid producing "1 : 1 : 3".
+        if ":" in clean_rr:
+
+            rr_display = clean_rr
+
+        else:
+
+            rr_display = (
+                f"1 : {clean_rr}"
+            )
+
         fields.append(
             {
                 "name": "📊 Risk / Reward",
-                "value": f"`1 : {rr.replace('R', '')}`",
+                "value": f"`{rr_display}`",
                 "inline": True,
             }
         )
@@ -259,6 +436,7 @@ def _build_signal_embed(
     # -------------------------------------------------
 
     if confidence:
+
         fields.append(
             {
                 "name": "💎 Confidence",
@@ -297,8 +475,7 @@ def _build_general_embed(
     text: str,
 ) -> dict[str, Any]:
     """
-    Convert non-signal notifications into a clean
-    Discord embed.
+    Format non-signal notifications.
     """
 
     cleaned = _clean_markdown(
@@ -312,12 +489,17 @@ def _build_general_embed(
     ]
 
     if lines:
+
         title = lines[0]
+
         description = "\n".join(
             lines[1:]
         )
+
     else:
+
         title = "BLISSFINITY SIGNAL"
+
         description = cleaned
 
     return {
@@ -338,14 +520,17 @@ def _build_payload(
     text: str,
 ) -> dict[str, Any]:
     """
-    Build the Discord webhook payload.
+    Build the correct Discord webhook payload.
     """
 
     if _is_signal(text):
+
         embed = _build_signal_embed(
             text
         )
+
     else:
+
         embed = _build_general_embed(
             text
         )
@@ -366,21 +551,23 @@ async def send_message(
 ) -> bool:
     """
     Send a professionally formatted notification
-    to the configured Discord webhook.
-
-    Discord formatting is independent from Telegram.
+    to Discord.
     """
 
     if not DISCORD_WEBHOOK_URL:
+
         logger.warning(
             "Discord webhook URL is missing."
         )
+
         return False
 
     if not text or not text.strip():
+
         logger.warning(
             "Discord message is empty."
         )
+
         return False
 
     payload = _build_payload(
@@ -395,6 +582,7 @@ async def send_message(
         1,
         MAX_RETRIES + 1,
     ):
+
         try:
 
             async with aiohttp.ClientSession(
@@ -410,6 +598,7 @@ async def send_message(
                         200,
                         204,
                     ):
+
                         logger.info(
                             "Discord message sent successfully."
                         )
@@ -428,9 +617,11 @@ async def send_message(
                     )
 
         except asyncio.CancelledError:
+
             raise
 
         except Exception:
+
             logger.exception(
                 "Discord request failed "
                 "(attempt %s/%s).",
@@ -439,6 +630,7 @@ async def send_message(
             )
 
         if attempt < MAX_RETRIES:
+
             await asyncio.sleep(
                 RETRY_DELAY
             )
