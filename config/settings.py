@@ -36,6 +36,11 @@ TELEGRAM_CHAT_ID = os.getenv(
     "",
 ).strip()
 
+DISCORD_WEBHOOK_URL = os.getenv(
+    "DISCORD_WEBHOOK_URL",
+    "",
+).strip()
+
 TELEGRAM_COMMUNITY_CHAT_ID = os.getenv(
     "TELEGRAM_COMMUNITY_CHAT_ID",
     "",

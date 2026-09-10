@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 import aiohttp
+from discord.sender import send_message as send_discord_message
 
 from config.settings import (
     TELEGRAM_CHAT_ID,
@@ -104,120 +105,157 @@ async def send_message(
     text: str,
 ) -> bool:
     """
-    Send one message to every configured
-    Telegram destination.
+    Send one notification to all configured
+    Telegram destinations and Discord.
 
-    Returns True only when the message is
-    successfully sent to all configured
-    destinations.
+    Telegram remains the primary delivery system.
+    Discord is an additional notification destination.
+
+    Discord failure does NOT cause Telegram
+    notification delivery to be considered failed.
     """
+
+    if not text or not text.strip():
+        logger.warning(
+            "Notification message is empty."
+        )
+        return False
+
+    # =================================================
+    # TELEGRAM
+    # =================================================
+
+    telegram_success = False
 
     if not TELEGRAM_TOKEN:
         logger.warning(
             "Telegram token is missing."
         )
-        return False
+    else:
+        chat_ids = get_chat_ids()
 
-    if not text or not text.strip():
-        logger.warning(
-            "Telegram message is empty."
-        )
-        return False
+        if not chat_ids:
+            logger.warning(
+                "No Telegram chat IDs are configured."
+            )
+        else:
+            timeout = aiohttp.ClientTimeout(
+                total=REQUEST_TIMEOUT
+            )
 
-    chat_ids = get_chat_ids()
+            overall_telegram_success = True
 
-    if not chat_ids:
-        logger.warning(
-            "No Telegram chat IDs are configured."
-        )
-        return False
+            async with aiohttp.ClientSession(
+                timeout=timeout
+            ) as session:
 
-    timeout = aiohttp.ClientTimeout(
-        total=REQUEST_TIMEOUT
-    )
+                for chat_id in chat_ids:
 
-    overall_success = True
+                    payload = {
+                        "chat_id": chat_id,
+                        "text": text,
+                        "parse_mode": "Markdown",
+                        "disable_web_page_preview": True,
+                    }
 
-    async with aiohttp.ClientSession(
-        timeout=timeout
-    ) as session:
+                    destination_success = False
 
-        for chat_id in chat_ids:
+                    for attempt in range(
+                        1,
+                        MAX_RETRIES + 1,
+                    ):
+                        try:
+                            async with session.post(
+                                BASE_URL,
+                                json=payload,
+                            ) as response:
 
-            payload = {
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "Markdown",
-                "disable_web_page_preview": True,
-            }
+                                if response.status == 200:
+                                    destination_success = True
 
-            destination_success = False
+                                    logger.info(
+                                        "Telegram message sent to %s.",
+                                        chat_id,
+                                    )
 
-            for attempt in range(
-                1,
-                MAX_RETRIES + 1,
-            ):
+                                    break
 
-                try:
+                                error_text = await response.text()
 
-                    async with session.post(
-                        BASE_URL,
-                        json=payload,
-                    ) as response:
+                                logger.error(
+                                    "Telegram error for %s "
+                                    "(attempt %s/%s): %s",
+                                    chat_id,
+                                    attempt,
+                                    MAX_RETRIES,
+                                    error_text,
+                                )
 
-                        if response.status == 200:
+                        except asyncio.CancelledError:
+                            raise
 
-                            destination_success = True
-
-                            logger.info(
-                                "Telegram message sent to %s.",
+                        except Exception:
+                            logger.exception(
+                                "Telegram request failed for %s "
+                                "(attempt %s/%s).",
                                 chat_id,
+                                attempt,
+                                MAX_RETRIES,
                             )
 
-                            break
+                        if attempt < MAX_RETRIES:
+                            await asyncio.sleep(
+                                RETRY_DELAY
+                            )
 
-                        error_text = await response.text()
+                    if not destination_success:
+                        overall_telegram_success = False
 
                         logger.error(
-                            "Telegram error for %s "
-                            "(attempt %s/%s): %s",
+                            "Telegram message failed "
+                            "for destination %s.",
                             chat_id,
-                            attempt,
-                            MAX_RETRIES,
-                            error_text,
                         )
 
-                except asyncio.CancelledError:
-                    raise
+            telegram_success = (
+                overall_telegram_success
+            )
 
-                except Exception:
+    # =================================================
+    # DISCORD
+    # =================================================
 
-                    logger.exception(
-                        "Telegram request failed for %s "
-                        "(attempt %s/%s).",
-                        chat_id,
-                        attempt,
-                        MAX_RETRIES,
-                    )
+    try:
+        discord_success = await send_discord_message(
+            text
+        )
 
-                if attempt < MAX_RETRIES:
-                    await asyncio.sleep(
-                        RETRY_DELAY
-                    )
+        if discord_success:
+            logger.info(
+                "Discord notification delivered successfully."
+            )
+        else:
+            logger.error(
+                "Discord notification failed."
+            )
 
-            if not destination_success:
+    except asyncio.CancelledError:
+        raise
 
-                overall_success = False
+    except Exception:
+        logger.exception(
+            "Unexpected Discord notification error."
+        )
 
-                logger.error(
-                    "Telegram message failed "
-                    "for destination %s.",
-                    chat_id,
-                )
+    # =================================================
+    # DELIVERY RESULT
+    # =================================================
 
-    return overall_success
+    # Telegram remains the primary success criterion.
+    # Discord is an additional notification channel
+    # and must never block the Telegram system.
 
-
+    return telegram_success
 # =====================================================
 # NEW SIGNAL
 # =====================================================
