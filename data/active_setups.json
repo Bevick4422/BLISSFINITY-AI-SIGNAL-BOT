@@ -1,16 +1,5 @@
 [
     {
-        "symbol": "BTC/USDT:USDT",
-        "direction": "SELL",
-        "setup": "A Shape",
-        "status": "WAITING_FOR_BOS",
-        "method": "DAILY_REJECTION",
-        "level": 66924.1,
-        "bos": false,
-        "signal_sent": false,
-        "created_at": "2026-07-24T03:23:53.294580"
-    },
-    {
         "symbol": "ETH/USDT:USDT",
         "direction": "SELL",
         "setup": "A Shape",
@@ -867,5 +856,100 @@
         "bos": false,
         "signal_sent": false,
         "created_at": null
-    }
-]
+    },
+    {
+        "symbol": "ALGO/USDT:USDT",
+        "direction": "SELL",
+        "setup": "A Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.09083,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "ATOM/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 1.364,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "BCH/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 211.17,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "BNB/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 586.6,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "DOGE/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.06884,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "DOT/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.7769,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "FET/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.1316,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "GALA/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 0.001613,
+        "bos": false,
+        "signal_sent": false,
+        "created_at": null
+    },
+    {
+        "symbol": "BTC/USDT:USDT",
+        "direction": "BUY",
+        "setup": "V Shape",
+        "status": "WAITING_FOR_BOS",
+        "method": "DAILY_REJECTION",
+        "level": 62499.1,
+        "level_index": 

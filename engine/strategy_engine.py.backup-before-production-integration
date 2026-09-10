@@ -1,0 +1,610 @@
+"""
+============================================================
+BLISSFINITY SIGNAL
+Strategy Engine
+============================================================
+
+STRATEGY FLOW
+
+1. Market Data
+2. Daily Setup
+3. H4 BOS when required
+4. Entry Selection
+5. Final Signal
+
+RULES
+
+Bullish Engulfing
+    -> BUY
+    -> Daily entry
+    -> No H4 BOS required
+
+Bearish Engulfing
+    -> SELL
+    -> Daily entry
+    -> No H4 BOS required
+
+V Shape
+    -> BUY
+    -> H4 BUY BOS required
+    -> Entry selector
+
+A Shape
+    -> SELL
+    -> H4 SELL BOS required
+    -> Entry selector
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from analysis.daily_setup.daily_engine import detect_daily_setup
+from analysis.h4_bos.h4_bos_engine import detect_h4_bos
+from analysis.entry.entry_selector import select_best_entry
+
+from analysis.atr.atr_engine import calculate_atr
+from analysis.risk.stoploss_engine import calculate_stop_loss
+from engine.risk_engine import build_trade
+from signal_engine.signal_builder import (
+    build_signal as build_production_signal,
+    validate_signal,
+)
+
+# ============================================================
+# REJECTION
+# ============================================================
+
+def reject(reason: str) -> Optional[Dict[str, Any]]:
+    print()
+    print(f"RESULT: {reason}")
+    return None
+
+
+# ============================================================
+# MARKET DATA
+# ============================================================
+
+def validate_market_data(
+    market_data: Dict[str, Any],
+) -> bool:
+
+    if not isinstance(market_data, dict):
+        return False
+
+    daily = market_data.get("1d")
+    h4 = market_data.get("4h")
+
+    if daily is None or h4 is None:
+        return False
+
+    if len(daily) < 50:
+        return False
+
+    if len(h4) < 100:
+        return False
+
+    return True
+
+
+# ============================================================
+# CURRENT PRICE
+# ============================================================
+
+def get_current_price(h4) -> Optional[float]:
+
+    try:
+        price = float(h4.iloc[-1]["close"])
+    except (
+        AttributeError,
+        IndexError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+    if price <= 0:
+        return None
+
+    return price
+
+
+# ============================================================
+# DAILY SETUP
+# ============================================================
+
+def get_daily_setup(
+    daily,
+) -> Optional[Dict[str, Any]]:
+
+    try:
+        setup = detect_daily_setup(daily)
+    except Exception as exc:
+        print(f"Daily setup error: {exc}")
+        return None
+
+    if not isinstance(setup, dict):
+        return None
+
+    if setup.get("valid") is not True:
+        return None
+
+    direction = setup.get("direction")
+    setup_name = setup.get("setup")
+
+    if direction not in ("BUY", "SELL"):
+        return None
+
+    allowed_setups = {
+        "Bullish Engulfing",
+        "Bearish Engulfing",
+        "V Shape",
+        "A Shape",
+    }
+
+    if setup_name not in allowed_setups:
+        return None
+
+    # IMPORTANT:
+    # Preserve every field supplied by the Daily Setup engine.
+    return {
+        "direction": direction,
+        "setup": setup_name,
+        "level": setup.get("level"),
+        "level_index": setup.get("level_index"),
+        "entry": setup.get("entry"),
+        "valid": True,
+    }
+
+
+# ============================================================
+# H4 BOS
+# ============================================================
+
+def get_h4_bos(
+    h4,
+    daily_direction: str,
+) -> Optional[Dict[str, Any]]:
+
+    try:
+        bos = detect_h4_bos(h4)
+    except Exception as exc:
+        print(f"H4 BOS error: {exc}")
+        return None
+
+    if not isinstance(bos, dict):
+        return None
+
+    if bos.get("bos") is not True:
+        return None
+
+    if bos.get("direction") != daily_direction:
+
+        print()
+        print("H4 BOS DIRECTION CONFLICT")
+        print(f"Daily Direction : {daily_direction}")
+        print(f"H4 Direction    : {bos.get('direction')}")
+
+        return None
+
+    broken_level = bos.get("broken_level")
+
+    if broken_level is None:
+        return None
+
+    try:
+        broken_level = float(broken_level)
+    except (TypeError, ValueError):
+        return None
+
+    if broken_level <= 0:
+        return None
+
+    return {
+        **bos,
+        "broken_level": broken_level,
+    }
+
+
+# ============================================================
+# DAILY ENGULFING ENTRY
+# ============================================================
+
+def validate_daily_entry(
+    entry: Any,
+) -> Optional[float]:
+
+    if entry is None:
+        return None
+
+    try:
+        entry = float(entry)
+    except (TypeError, ValueError):
+        return None
+
+    if entry <= 0:
+        return None
+
+    return entry
+
+
+# ============================================================
+# STRUCTURAL ENTRY
+# ============================================================
+
+def validate_structural_entry(
+    entry: Any,
+) -> Optional[Dict[str, Any]]:
+
+    if not isinstance(entry, dict):
+        return None
+
+    if entry.get("valid") is not True:
+        return None
+
+    entry_price = entry.get("entry_price")
+
+    if entry_price is None:
+        return None
+
+    try:
+        entry_price = float(entry_price)
+    except (TypeError, ValueError):
+        return None
+
+    if entry_price <= 0:
+        return None
+
+    return {
+        "entry_type": entry.get("entry_type"),
+        "entry": entry_price,
+        "confidence": entry.get("confidence", 0),
+        "entry_data": entry.get("entry_data", {}),
+    }
+
+
+# ============================================================
+# FINAL SIGNAL
+# ============================================================
+
+def build_production_trade_signal(
+    symbol: str,
+    direction: str,
+    setup: str,
+    entry_type: str,
+    entry: float,
+    confidence: float,
+    current_price: float,
+    h4,
+) -> Optional[Dict[str, Any]]:
+
+    try:
+        atr = calculate_atr(h4)
+    except Exception as exc:
+        print(f"ATR ERROR: {exc}")
+        return reject("ATR CALCULATION FAILED")
+
+    if atr is None or atr <= 0:
+        return reject("INVALID ATR")
+
+    print()
+    print("[4] ATR")
+    print(f"ATR          : {atr}")
+
+    stop_result = calculate_stop_loss(
+        df=h4,
+        atr=atr,
+        direction=direction,
+        entry_type=entry_type,
+    )
+
+    if not isinstance(stop_result, dict):
+        return reject("INVALID STOP LOSS RESULT")
+
+    if stop_result.get("valid") is not True:
+        return reject(
+            f"STOP LOSS FAILED: "
+            f"{stop_result.get('reason', 'UNKNOWN')}"
+        )
+
+    stop_loss = stop_result.get("stop_loss")
+
+    if stop_loss is None:
+        return reject("NO VALID STRUCTURE STOP")
+
+    try:
+        stop_loss = float(stop_loss)
+    except (TypeError, ValueError):
+        return reject("INVALID STRUCTURE STOP")
+
+    print()
+    print("[5] STRUCTURE STOP")
+    print(f"Entry        : {entry}")
+    print(f"Stop Loss    : {stop_loss}")
+    print(f"Stop Type    : {entry_type}")
+
+    if direction == "BUY" and stop_loss >= entry:
+        return reject("BUY STOP MUST BE BELOW ENTRY")
+
+    if direction == "SELL" and stop_loss <= entry:
+        return reject("SELL STOP MUST BE ABOVE ENTRY")
+
+    candle = h4.iloc[-1]
+
+    trade = build_trade(
+        direction=direction,
+        candle=candle,
+        stop_loss=stop_loss,
+        entry=entry,
+    )
+
+    if not isinstance(trade, dict):
+        return reject("RISK ENGINE FAILED")
+
+    if trade.get("valid") is not True:
+        return reject("RISK ENGINE RETURNED INVALID TRADE")
+
+    tp1 = trade.get("tp1")
+    tp2 = trade.get("tp2")
+    tp3 = trade.get("tp3")
+
+    if tp1 is None or tp2 is None:
+        return reject("MISSING TAKE PROFIT LEVELS")
+
+    print()
+    print("[6] RISK ENGINE")
+    print(f"Entry        : {trade['entry']}")
+    print(f"Stop Loss    : {trade['stop_loss']}")
+    print(f"Risk         : {trade['risk']}")
+    print(f"TP1          : {tp1}")
+    print(f"TP2          : {tp2}")
+    print(f"TP3          : {tp3}")
+
+    signal = build_production_signal(
+        symbol=symbol,
+        direction=direction,
+        setup=setup,
+        entry=trade["entry"],
+        stop_loss=trade["stop_loss"],
+        tp1=tp1,
+        tp2=tp2,
+        confidence=confidence,
+        entry_type=entry_type,
+    )
+
+    if signal is None:
+        return reject("PRODUCTION SIGNAL BUILDER REJECTED TRADE")
+
+    signal["current_price"] = current_price
+    signal["atr"] = atr
+    signal["tp3"] = tp3
+    signal["stop_reason"] = stop_result.get("reason")
+    signal["risk_engine"] = True
+    signal["production_signal"] = True
+
+    if not validate_signal(signal):
+        return reject("FINAL SIGNAL VALIDATION FAILED")
+
+    signal["status"] = "READY"
+
+    print()
+    print("=" * 60)
+    print("PRODUCTION SIGNAL READY")
+    print("=" * 60)
+
+    print(f"Symbol       : {signal['symbol']}")
+    print(f"Direction    : {signal['direction']}")
+    print(f"Setup        : {signal['setup']}")
+    print(f"Entry Type   : {signal['entry_type']}")
+    print(f"Entry        : {signal['entry']}")
+    print(f"Stop Loss    : {signal['stop_loss']}")
+    print(f"TP1          : {signal['tp1']}")
+    print(f"TP2          : {signal['tp2']}")
+    print(f"TP3          : {signal['tp3']}")
+    print(f"Risk         : {signal['risk']}")
+    print(f"RR           : {signal['rr']}")
+    print(f"Confidence   : {signal['confidence']}")
+
+    print("=" * 60)
+
+    return signal
+# ============================================================
+# STRATEGY ENGINE
+# ============================================================
+
+def evaluate_symbol(
+    symbol: str,
+    market_data: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+
+    print()
+    print("=" * 60)
+    print(f"{symbol} | STRATEGY ENGINE")
+    print("=" * 60)
+
+    # --------------------------------------------------------
+    # 1. MARKET DATA
+    # --------------------------------------------------------
+
+    if not validate_market_data(market_data):
+        return reject("MARKET DATA UNAVAILABLE")
+
+    daily = market_data["1d"]
+    h4 = market_data["4h"]
+
+    # --------------------------------------------------------
+    # CURRENT PRICE
+    # --------------------------------------------------------
+
+    current_price = get_current_price(h4)
+
+    if current_price is None:
+        return reject("CURRENT PRICE UNAVAILABLE")
+
+    print()
+    print(f"Current Price : {current_price}")
+
+    # --------------------------------------------------------
+    # 2. DAILY SETUP
+    # --------------------------------------------------------
+
+    print()
+    print("[1] DAILY SETUP")
+
+    daily_setup = get_daily_setup(daily)
+
+    if daily_setup is None:
+        return reject("NO VALID DAILY SETUP")
+
+    direction = daily_setup["direction"]
+    setup = daily_setup["setup"]
+    level = daily_setup["level"]
+    level_index = daily_setup["level_index"]
+    daily_entry = daily_setup.get("entry")
+
+    print(f"Direction     : {direction}")
+    print(f"Setup         : {setup}")
+    print(f"Level         : {level}")
+    print(f"Level Index   : {level_index}")
+    print(f"Daily Entry   : {daily_entry}")
+
+    # --------------------------------------------------------
+    # 3. ENGULFING SETUP
+    # --------------------------------------------------------
+
+    if setup in (
+        "Bullish Engulfing",
+        "Bearish Engulfing",
+    ):
+
+        print()
+        print("[2] H4 BOS")
+        print("H4 BOS       : NOT REQUIRED")
+        print(f"Setup        : {setup}")
+
+        print()
+        print("[3] ENTRY SELECTION")
+        print()
+        print("DAILY ENGULFING ENTRY")
+        print("-" * 60)
+        print(f"Direction   : {direction}")
+        print(f"Daily Entry : {daily_entry}")
+        print(f"Current     : {current_price}")
+        print("-" * 60)
+
+        valid_entry = validate_daily_entry(
+            daily_entry
+        )
+
+        if valid_entry is None:
+            return reject("INVALID DAILY ENTRY")
+
+        print("RESULT: VALID DAILY ENTRY")
+
+        return build_production_trade_signal(
+            symbol=symbol,
+            direction=direction,
+            setup=setup,
+            entry_type="ENGULFING",
+            entry=valid_entry,
+            confidence=90,
+            current_price=current_price,
+        )
+
+    # --------------------------------------------------------
+    # 4. STRUCTURAL SETUP
+    # --------------------------------------------------------
+
+    if setup not in (
+        "V Shape",
+        "A Shape",
+    ):
+        return reject("UNSUPPORTED DAILY SETUP")
+
+    # --------------------------------------------------------
+    # H4 BOS REQUIRED
+    # --------------------------------------------------------
+
+    print()
+    print("[2] H4 BOS")
+
+    bos = get_h4_bos(
+        h4,
+        direction,
+    )
+
+    if bos is None:
+        return reject("WAITING FOR H4 BOS")
+
+    bos_level = bos["broken_level"]
+
+    print(
+        f"BOS          : {bos.get('bos')}"
+    )
+
+    print(
+        f"Direction    : {bos.get('direction')}"
+    )
+
+    print(
+        f"Broken Level : {bos_level}"
+    )
+
+    print(
+        f"Break Index  : {bos.get('break_index')}"
+    )
+
+    # --------------------------------------------------------
+    # 5. ENTRY SELECTION
+    # --------------------------------------------------------
+
+    print()
+    print("[3] ENTRY SELECTION")
+
+    raw_entry = select_best_entry(
+        df=h4,
+        level=level,
+        direction=direction,
+        level_index=level_index,
+        bos_level=bos_level,
+        setup=setup,
+        daily_entry=daily_entry,
+    )
+
+    entry = validate_structural_entry(
+        raw_entry
+    )
+
+    if entry is None:
+        return reject("NO VALID ENTRY")
+
+    print()
+    print("RESULT: VALID STRUCTURAL ENTRY")
+
+    print(
+        f"Entry Type : {entry['entry_type']}"
+    )
+
+    print(
+        f"Entry      : {entry['entry']}"
+    )
+
+    print(
+        f"Confidence : {entry['confidence']}"
+    )
+
+    # --------------------------------------------------------
+    # 6. FINAL SIGNAL
+    # --------------------------------------------------------
+
+    return build_production_trade_signal(
+        symbol=symbol,
+        direction=direction,
+        setup=setup,
+        entry_type=entry["entry_type"],
+        entry=entry["entry"],
+        confidence=entry["confidence"],
+        current_price=current_price,
+        h4=h4,
+    )

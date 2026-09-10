@@ -1,7 +1,7 @@
 
 """
 =====================================================
-BLISSFINITY AI SIGNAL BOT
+BLISSFINITY SIGNAL 
 Production Risk Engine v7
 =====================================================
 """
@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 DEFAULT_TP1_RR = 2.0
 DEFAULT_TP2_RR = 3.0
-DEFAULT_TP3_RR = 5.0
+
 
 
 # =====================================================
@@ -105,13 +105,13 @@ def build_trade(
 
             tp1 = entry + risk * DEFAULT_TP1_RR
             tp2 = entry + risk * DEFAULT_TP2_RR
-            tp3 = entry + risk * DEFAULT_TP3_RR
+          
 
         elif direction == "SELL":
 
             tp1 = entry - risk * DEFAULT_TP1_RR
             tp2 = entry - risk * DEFAULT_TP2_RR
-            tp3 = entry - risk * DEFAULT_TP3_RR
+           
 
         else:
 
@@ -132,7 +132,7 @@ def build_trade(
 
             "tp1": round(tp1, 4),
             "tp2": round(tp2, 4),
-            "tp3": round(tp3, 4),
+          
 
             "rr": DEFAULT_TP1_RR,
 

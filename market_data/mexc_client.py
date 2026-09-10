@@ -1,58 +1,94 @@
+"""
+=====================================================
+BLISSFINITY SIGNAL 
+MEXC Futures Client
+=====================================================
+
+Provides access to live MEXC Futures market data.
+
+Author: Blissfinity
+=====================================================
+"""
+
+from __future__ import annotations
+
 import requests
-import pandas as pd
 
 BASE_URL = "https://contract.mexc.com"
 
 
-INTERVAL_MAP = {
-    "1m": "Min1",
-    "5m": "Min5",
-    "15m": "Min15",
-    "30m": "Min30",
-    "1h": "Min60",
-    "4h": "Hour4",
-    "1d": "Day1",
-}
-
-
-def get_klines(symbol="BTC_USDT", interval="15m", limit=200):
+class MexcClient:
     """
-    Download OHLCV candles from MEXC Futures API.
-    Returns a pandas DataFrame.
+    MEXC Futures REST API Client.
     """
 
-    interval = INTERVAL_MAP.get(interval, "Min15")
+    def __init__(self) -> None:
+        self.session = requests.Session()
+        self.timeout = 10
 
-    url = (
-        f"{BASE_URL}/api/v1/contract/kline/"
-        f"{symbol}?interval={interval}&limit={limit}"
-    )
+    def _get(
+        self,
+        endpoint: str,
+    ) -> dict:
+        """
+        Perform a GET request.
+        """
 
-    response = requests.get(url, timeout=15)
-    response.raise_for_status()
+        response = self.session.get(
+            f"{BASE_URL}{endpoint}",
+            timeout=self.timeout,
+        )
 
-    data = response.json()
+        response.raise_for_status()
 
-    if not data.get("success", False):
-        raise Exception(data)
+        data = response.json()
 
-    d = data["data"]
+        if not data.get("success", False):
+            raise RuntimeError(data)
 
-    df = pd.DataFrame({
-        "time": d["time"],
-        "open": d["open"],
-        "high": d["high"],
-        "low": d["low"],
-        "close": d["close"],
-        "volume": d["vol"],
-    })
+        return data
 
-    df = df.astype({
-        "open": float,
-        "high": float,
-        "low": float,
-        "close": float,
-        "volume": float,
-    })
+    def get_ticker(
+        self,
+        symbol: str,
+    ) -> dict:
+        """
+        Return ticker information.
+        """
 
-    return df
+        data = self._get(
+            f"/api/v1/contract/ticker/{symbol}"
+        )
+
+        return data["data"]
+
+    def get_latest_price(
+        self,
+        symbol: str,
+    ) -> float:
+        """
+        Return the latest traded price.
+        """
+
+        ticker = self.get_ticker(symbol)
+
+        return float(
+            ticker["lastPrice"]
+        )
+
+    def get_orderbook(
+        self,
+        symbol: str,
+    ) -> dict:
+        """
+        Return the current order book.
+        """
+
+        data = self._get(
+            f"/api/v1/contract/depth/{symbol}"
+        )
+
+        return data["data"]
+
+
+mexc_client = MexcClient()

@@ -1,167 +1,276 @@
-
 """
-=====================================================
-BLISSFINITY AI SIGNAL BOT
-Production Fresh H4 Level Engine v8
-=====================================================
+BLISSFINITY SIGNAL
+Fresh H4 Level Detection
 
-Purpose
--------
-Detect untouched (fresh) H4 Supply/Demand levels.
+A level is considered FRESH only when:
 
-A Fresh Level must:
+1. The level has a known creation candle.
+2. Price moves away from the level after creation.
+3. No later H4 candle touches the level.
+4. A wick touching the level counts as mitigation.
+5. A body touching the level counts as mitigation.
+6. An exact price touch counts as mitigation.
 
-• Be newly created
-• Have moved away from the level
-• Never be revisited
-• Be trend aligned
-
-=====================================================
+The creation candle itself is ignored when checking mitigation.
 """
 
 from __future__ import annotations
 
-import traceback
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
 
-MIN_REQUIRED_CANDLES = 10
-
+MIN_REQUIRED_CANDLES = 3
 DEFAULT_CONFIDENCE = 85
 
 
-# =====================================================
-# FRESH LEVEL DETECTION
-# =====================================================
+# ==========================================================
+# RESULT HELPERS
+# ==========================================================
+
+def invalid_result(reason: str) -> Dict[str, Any]:
+    return {
+        "valid": False,
+        "entry_type": None,
+        "entry": None,
+        "confidence": 0,
+        "reason": reason,
+    }
+
+
+# ==========================================================
+# LEVEL TOUCH
+# ==========================================================
+
+def candle_touches_level(
+    candle,
+    level: float,
+) -> bool:
+    """
+    Return True if the candle wick or body touches the level.
+
+    Any price overlap with the level means the level has
+    been mitigated.
+    """
+
+    try:
+        low = float(candle["low"])
+        high = float(candle["high"])
+
+    except (KeyError, TypeError, ValueError):
+        return True
+
+    return low <= level <= high
+
+
+# ==========================================================
+# PRICE MOVED AWAY
+# ==========================================================
+
+def price_moved_away(
+    candle,
+    level: float,
+    direction: str,
+) -> bool:
+    """
+    Confirm that price has moved away from the level.
+
+    BUY / demand:
+        Candle must trade above the level.
+
+    SELL / supply:
+        Candle must trade below the level.
+    """
+
+    try:
+        close = float(candle["close"])
+
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    if direction == "BUY":
+        return close > level
+
+    if direction == "SELL":
+        return close < level
+
+    return False
+
+
+# ==========================================================
+# FRESH LEVEL DETECTOR
+# ==========================================================
 
 def detect_fresh_level(
     df: pd.DataFrame,
     level: float,
     direction: str,
+    level_index: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Detect a Fresh H4 Key Level.
+    Detect whether an H4 level remains completely fresh.
 
     Parameters
     ----------
-    df
+    df:
         H4 OHLCV dataframe.
 
-    level
-        Supply / Demand level.
+    level:
+        Price level being tested.
 
-    direction
+    direction:
         BUY or SELL.
 
-    Returns
-    -------
-    dict
+    level_index:
+        Positional index of the candle that created the level.
+
+    Important
+    ---------
+    The candle that created the level is NOT considered a
+    mitigation.
+
+    Every candle after the creation candle is checked.
     """
 
+    # ------------------------------------------------------
+    # BASIC VALIDATION
+    # ------------------------------------------------------
+
+    if df is None:
+
+        return invalid_result(
+            "No H4 market data"
+        )
+
+    if len(df) < MIN_REQUIRED_CANDLES:
+
+        return invalid_result(
+            "Insufficient H4 candles"
+        )
+
+    if level is None:
+
+        return invalid_result(
+            "Level is None"
+        )
+
+    if direction not in ("BUY", "SELL"):
+
+        return invalid_result(
+            "Invalid direction"
+        )
+
     try:
+        level = float(level)
 
-        if df is None or df.empty:
+    except (TypeError, ValueError):
+
+        return invalid_result(
+            "Invalid level"
+        )
+
+    # ------------------------------------------------------
+    # LEVEL CREATION INDEX IS REQUIRED
+    # ------------------------------------------------------
+
+    if level_index is None:
+
+        return invalid_result(
+            "Level creation index required"
+        )
+
+    try:
+        level_index = int(level_index)
+
+    except (TypeError, ValueError):
+
+        return invalid_result(
+            "Invalid level creation index"
+        )
+
+    if level_index < 0 or level_index >= len(df):
+
+        return invalid_result(
+            "Level creation index out of range"
+        )
+
+    # ------------------------------------------------------
+    # CANDLES AFTER LEVEL CREATION
+    # ------------------------------------------------------
+
+    future_candles = df.iloc[level_index + 1:]
+
+    if future_candles.empty:
+
+        return invalid_result(
+            "No candles after level creation"
+        )
+
+    # ------------------------------------------------------
+    # PRICE MUST MOVE AWAY
+    # ------------------------------------------------------
+
+    moved_away = False
+
+    # ------------------------------------------------------
+    # CHECK EVERY FUTURE CANDLE
+    # ------------------------------------------------------
+
+    for position, (_, candle) in enumerate(
+        future_candles.iterrows(),
+        start=level_index + 1,
+    ):
+
+        # --------------------------------------------------
+        # ANY TOUCH = MITIGATION
+        # --------------------------------------------------
+
+        if candle_touches_level(
+            candle,
+            level,
+        ):
 
             return {
-
                 "valid": False,
-
                 "entry_type": None,
-
                 "entry": None,
-
                 "confidence": 0,
-
-                "reason": "No market data",
-
+                "reason": "Fresh level already touched",
+                "mitigated_index": position,
             }
 
-        if len(df) < MIN_REQUIRED_CANDLES:
+        # --------------------------------------------------
+        # PRICE MOVED AWAY
+        # --------------------------------------------------
 
-            return {
+        if price_moved_away(
+            candle,
+            level,
+            direction,
+        ):
 
-                "valid": False,
+            moved_away = True
 
-                "entry_type": None,
+    # ------------------------------------------------------
+    # PRICE MUST HAVE LEFT THE LEVEL
+    # ------------------------------------------------------
 
-                "entry": None,
+    if not moved_away:
 
-                "confidence": 0,
+        return invalid_result(
+            "Price has not moved away from level"
+        )
 
-                "reason": "Insufficient candles",
+    # ------------------------------------------------------
+    # LEVEL IS FRESH
+    # ------------------------------------------------------
 
-            }
-
-        # --------------------------------------------
-        # Ignore the candle that created the level.
-        # Only future candles may invalidate freshness.
-        # --------------------------------------------
-
-        future_candles = df.iloc[1:]
-
-        revisits = 0
-
-        for _, candle in future_candles.iterrows():
-
-            low = float(candle["low"])
-            high = float(candle["high"])
-
-            if low <= level <= high:
-
-                revisits += 1
-
-                # Already mitigated
-                if revisits > 0:
-
-                    return {
-
-                        "valid": False,
-
-                        "entry_type": None,
-
-                        "entry": None,
-
-                        "confidence": 0,
-
-                        "reason": "Level already mitigated",
-
-                    }
-
-        return {
-
-            "valid": True,
-
-            "entry_type": "FRESH_LEVEL",
-
-            "entry": round(level, 4),
-
-            "confidence": DEFAULT_CONFIDENCE,
-
-            "reason": "Untouched H4 Supply/Demand Level",
-
-        }
-
-    except Exception as e:
-
-        print("\n" + "=" * 60)
-        print("FRESH LEVEL ENGINE ERROR")
-        print("=" * 60)
-        print(f"Error : {e}")
-        traceback.print_exc()
-        print("=" * 60)
-
-        return {
-
-            "valid": False,
-
-            "entry_type": None,
-
-            "entry": None,
-
-            "confidence": 0,
-
-            "reason": "Engine Error",
-
-        }
+    return {
+        "valid": True,
+        "entry_type": "FRESH_LEVEL",
+        "entry": float(level),
+        "confidence": DEFAULT_CONFIDENCE,
+        "reason": "Untouched Fresh H4 Level",
+        "level_index": level_index,
+    }

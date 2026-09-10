@@ -1,709 +1,610 @@
-
 """
-=========================================================
-BLISSFINITY AI SIGNAL BOT
-Strategy Engine v10
-=========================================================
+============================================================
+BLISSFINITY SIGNAL
+Strategy Engine
+============================================================
 
-Trading Pipeline
+STRATEGY FLOW
 
-Market Data
-      ↓
-Market Validation
-      ↓
-Market Regime Filter
-      ↓
-Daily Bias
-      ↓
-Daily Setup Detection
-      ↓
-Bias Confirmation
-      ↓
-Save Daily Rejection Setup
-      ↓
-Wait For H4 BOS
-      ↓
-Entry Selection
-      ↓
-Stop Loss
-      ↓
-Risk Engine
-      ↓
-Confluence Score
-      ↓
-Signal Generation
-=========================================================
+1. Market Data
+2. Daily Setup
+3. H4 BOS when required
+4. Entry Selection
+5. Final Signal
+
+RULES
+
+Bullish Engulfing
+    -> BUY
+    -> Daily entry
+    -> No H4 BOS required
+
+Bearish Engulfing
+    -> SELL
+    -> Daily entry
+    -> No H4 BOS required
+
+V Shape
+    -> BUY
+    -> H4 BUY BOS required
+    -> Entry selector
+
+A Shape
+    -> SELL
+    -> H4 SELL BOS required
+    -> Entry selector
 """
 
 from __future__ import annotations
 
-import traceback
+from typing import Any, Dict, Optional
 
-from typing import Dict, Any, Optional
+from analysis.daily_setup.daily_engine import detect_daily_setup
+from analysis.h4_bos.h4_bos_engine import detect_h4_bos
+from analysis.entry.entry_selector import select_best_entry
 
-# ==========================================================
-# DAILY ANALYSIS
-# ==========================================================
-
-from analysis.daily_setup.daily_engine import (
-    detect_daily_setup,
+from analysis.atr.atr_engine import calculate_atr
+from analysis.risk.stoploss_engine import calculate_stop_loss
+from engine.risk_engine import build_trade
+from signal_engine.signal_builder import (
+    build_signal as build_production_signal,
+    validate_signal,
 )
 
-from engine.daily_bias import (
-    get_daily_bias,
-)
+# ============================================================
+# REJECTION
+# ============================================================
 
-from engine.detectors.daily_engulfing import (
-    detect_daily_engulfing_signal,
-)
-
-from engine.detectors.daily_rejection import (
-    detect_daily_rejection_signal,
-)
-
-# ==========================================================
-# MARKET STRUCTURE
-# ==========================================================
-
-from analysis.bos.bos_engine import (
-    bullish_bos,
-    bearish_bos,
-)
-
-# ==========================================================
-# ENTRY
-# ==========================================================
-
-from analysis.entry.entry_selector import (
-    select_best_entry,
-)
-
-# ==========================================================
-# RISK
-# ==========================================================
-
-from analysis.risk.stoploss_engine import (
-    calculate_stop_loss,
-)
-
-# ==========================================================
-# SIGNAL
-# ==========================================================
-
-from engine.signal_builder import (
-    build_signal,
-)
-
-# ==========================================================
-# SETUP STORAGE
-# ==========================================================
-
-from analysis.setup_manager.setup_manager import (
-    get_setup,
-    add_setup,
-    remove_setup,
-)
-
-# ==========================================================
-# DEBUG
-# ==========================================================
-
-DEBUG = True
+def reject(reason: str) -> Optional[Dict[str, Any]]:
+    print()
+    print(f"RESULT: {reason}")
+    return None
 
 
-# ==========================================================
-# MARKET VALIDATION
-# ==========================================================
+# ============================================================
+# MARKET DATA
+# ============================================================
 
-def validate_market(
-    market: Dict[str, Any],
+def validate_market_data(
+    market_data: Dict[str, Any],
 ) -> bool:
-    """
-    Validate downloaded market data.
-    """
 
-    if not isinstance(market, dict):
+    if not isinstance(market_data, dict):
         return False
 
-    required = ("1d", "4h")
+    daily = market_data.get("1d")
+    h4 = market_data.get("4h")
 
-    for tf in required:
+    if daily is None or h4 is None:
+        return False
 
-        if tf not in market:
-            return False
+    if len(daily) < 50:
+        return False
 
-        if market[tf] is None:
-            return False
-
-        if len(market[tf]) < 50:
-            return False
+    if len(h4) < 100:
+        return False
 
     return True
 
 
-# ==========================================================
-# MARKET REGIME
-# ==========================================================
+# ============================================================
+# CURRENT PRICE
+# ============================================================
 
-def detect_market_regime(h4) -> str:
-    """
-    Detect overall market condition.
+def get_current_price(h4) -> Optional[float]:
 
-    Returns:
-        TRENDING
-        RANGING
-        HIGH_VOLATILITY
-    """
+    try:
+        price = float(h4.iloc[-1]["close"])
+    except (
+        AttributeError,
+        IndexError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ):
+        return None
 
-    recent = h4.tail(20)
+    if price <= 0:
+        return None
 
-    highest = recent["high"].max()
-    lowest = recent["low"].min()
-
-    movement = highest - lowest
-
-    average_range = (
-        recent["high"] - recent["low"]
-    ).mean()
-
-    if average_range <= 0:
-        return "RANGING"
-
-    ratio = movement / average_range
-
-    if ratio >= 5:
-        return "TRENDING"
-
-    if ratio <= 2:
-        return "RANGING"
-
-    return "HIGH_VOLATILITY"
+    return price
 
 
-# ==========================================================
-# SETUP VALIDATION
-# ==========================================================
+# ============================================================
+# DAILY SETUP
+# ============================================================
 
-def validate_setup(
-    setup: Optional[Dict[str, Any]],
-) -> bool:
-    """
-    Validate saved setup object.
-    """
-
-    if setup is None:
-        return False
-
-    required = (
-        "symbol",
-        "direction",
-        "setup",
-        "status",
-        "level",
-    )
-
-    return all(
-        key in setup
-        for key in required
-    )
-# ==========================================================
-# CREATE DAILY SETUP
-# ==========================================================
-
-def create_daily_setup(
-    symbol: str,
+def get_daily_setup(
     daily,
-    bias: str,
 ) -> Optional[Dict[str, Any]]:
-    """
-    Analyse the Daily timeframe.
 
-    Flow
-
-        Daily Setup
-            │
-            ├── Bias Validation
-            │
-            ├── Daily Engulfing
-            │       │
-            │       ▼
-            │   Immediate Signal
-            │
-            └── Daily Rejection
-                    │
-                    ▼
-                Save Setup
-    """
-
-    # ------------------------------------------------------
-    # Ignore neutral market bias
-    # ------------------------------------------------------
-
-    if bias == "NEUTRAL":
-
-        if DEBUG:
-            print(f"{symbol} | Neutral Bias - Skipping")
-
+    try:
+        setup = detect_daily_setup(daily)
+    except Exception as exc:
+        print(f"Daily setup error: {exc}")
         return None
 
-    # ------------------------------------------------------
-    # Detect Daily Setup
-    # ------------------------------------------------------
-
-    result = detect_daily_setup(daily)
-
-    if result is None:
+    if not isinstance(setup, dict):
         return None
 
-    if not result.get("valid", False):
+    if setup.get("valid") is not True:
         return None
 
-    setup_name = result.get("setup")
+    direction = setup.get("direction")
+    setup_name = setup.get("setup")
 
-    level = float(result.get("level"))
-
-    # ------------------------------------------------------
-    # Setup must agree with trend bias
-    # ------------------------------------------------------
-
-    if setup_name == "V Shape" and bias != "BUY":
-
-        if DEBUG:
-            print(f"{symbol} | Bullish setup rejected (Bias = {bias})")
-
+    if direction not in ("BUY", "SELL"):
         return None
 
-    if setup_name == "A Shape" and bias != "SELL":
-
-        if DEBUG:
-            print(f"{symbol} | Bearish setup rejected (Bias = {bias})")
-
-        return None
-
-    if DEBUG:
-
-        print("\n" + "=" * 60)
-        print(symbol)
-        print("=" * 60)
-        print(f"Bias  : {bias}")
-        print(f"Setup : {setup_name}")
-        print(f"Level : {level}")
-        print("=" * 60)
-
-    # ------------------------------------------------------
-    # DAILY ENGULFING
-    # ------------------------------------------------------
-
-    engulfing = detect_daily_engulfing_signal(result)
-
-    if engulfing is not None:
-
-        entry_price = float(
-            daily.iloc[-1]["close"]
-        )
-
-        signal = build_signal(
-
-            symbol=symbol,
-
-            direction=engulfing["direction"],
-
-            setup=setup_name,
-
-            candle=daily.iloc[-1],
-
-            entry=entry_price,
-
-            entry_type="ENGULFING",
-
-        )
-
-        if signal is None:
-
-            if DEBUG:
-                print(f"{symbol} | Failed To Build Engulfing Signal")
-
-            return None
-
-        if DEBUG:
-            print(f"{symbol} | Daily Engulfing Signal Generated")
-
-        return signal
-
-    # ------------------------------------------------------
-    # DAILY REJECTION
-    # ------------------------------------------------------
-
-    rejection = detect_daily_rejection_signal(result)
-
-    if rejection is None:
-        return None
-
-    # Extra safety check
-
-    if rejection["direction"] != bias:
-
-        if DEBUG:
-            print(f"{symbol} | Rejection Direction Mismatch")
-
-        return None
-
-    setup_data = {
-
-        "symbol": symbol,
-
-        "direction": rejection["direction"],
-
-        "setup": setup_name,
-
-        "status": "WAITING_FOR_BOS",
-
-        "method": "DAILY_REJECTION",
-
-        "level": level,
-
-        "bos": False,
-
-        "signal_sent": False,
-
-        "created_at": None,
-
+    allowed_setups = {
+        "Bullish Engulfing",
+        "Bearish Engulfing",
+        "V Shape",
+        "A Shape",
     }
 
-    add_setup(setup_data)
+    if setup_name not in allowed_setups:
+        return None
 
-    if DEBUG:
-        print(f"{symbol} | Daily Rejection Saved")
+    # IMPORTANT:
+    # Preserve every field supplied by the Daily Setup engine.
+    return {
+        "direction": direction,
+        "setup": setup_name,
+        "level": setup.get("level"),
+        "level_index": setup.get("level_index"),
+        "entry": setup.get("entry"),
+        "valid": True,
+    }
 
-    return None
-# ==========================================================
-# EVALUATE SYMBOL
-# ==========================================================
+
+# ============================================================
+# H4 BOS
+# ============================================================
+
+def get_h4_bos(
+    h4,
+    daily_direction: str,
+) -> Optional[Dict[str, Any]]:
+
+    try:
+        bos = detect_h4_bos(h4)
+    except Exception as exc:
+        print(f"H4 BOS error: {exc}")
+        return None
+
+    if not isinstance(bos, dict):
+        return None
+
+    if bos.get("bos") is not True:
+        return None
+
+    if bos.get("direction") != daily_direction:
+
+        print()
+        print("H4 BOS DIRECTION CONFLICT")
+        print(f"Daily Direction : {daily_direction}")
+        print(f"H4 Direction    : {bos.get('direction')}")
+
+        return None
+
+    broken_level = bos.get("broken_level")
+
+    if broken_level is None:
+        return None
+
+    try:
+        broken_level = float(broken_level)
+    except (TypeError, ValueError):
+        return None
+
+    if broken_level <= 0:
+        return None
+
+    return {
+        **bos,
+        "broken_level": broken_level,
+    }
+
+
+# ============================================================
+# DAILY ENGULFING ENTRY
+# ============================================================
+
+def validate_daily_entry(
+    entry: Any,
+) -> Optional[float]:
+
+    if entry is None:
+        return None
+
+    try:
+        entry = float(entry)
+    except (TypeError, ValueError):
+        return None
+
+    if entry <= 0:
+        return None
+
+    return entry
+
+
+# ============================================================
+# STRUCTURAL ENTRY
+# ============================================================
+
+def validate_structural_entry(
+    entry: Any,
+) -> Optional[Dict[str, Any]]:
+
+    if not isinstance(entry, dict):
+        return None
+
+    if entry.get("valid") is not True:
+        return None
+
+    entry_price = entry.get("entry_price")
+
+    if entry_price is None:
+        return None
+
+    try:
+        entry_price = float(entry_price)
+    except (TypeError, ValueError):
+        return None
+
+    if entry_price <= 0:
+        return None
+
+    return {
+        "entry_type": entry.get("entry_type"),
+        "entry": entry_price,
+        "confidence": entry.get("confidence", 0),
+        "entry_data": entry.get("entry_data", {}),
+    }
+
+
+# ============================================================
+# FINAL SIGNAL
+# ============================================================
+
+def build_production_trade_signal(
+    symbol: str,
+    direction: str,
+    setup: str,
+    entry_type: str,
+    entry: float,
+    confidence: float,
+    current_price: float,
+    h4,
+) -> Optional[Dict[str, Any]]:
+
+    try:
+        atr = calculate_atr(h4)
+    except Exception as exc:
+        print(f"ATR ERROR: {exc}")
+        return reject("ATR CALCULATION FAILED")
+
+    if atr is None or atr <= 0:
+        return reject("INVALID ATR")
+
+    print()
+    print("[4] ATR")
+    print(f"ATR          : {atr}")
+
+    stop_result = calculate_stop_loss(
+        df=h4,
+        atr=atr,
+        direction=direction,
+        entry_type=entry_type,
+        entry=entry,
+    )
+
+    if not isinstance(stop_result, dict):
+        return reject("INVALID STOP LOSS RESULT")
+
+    if stop_result.get("valid") is not True:
+        return reject(
+            f"STOP LOSS FAILED: "
+            f"{stop_result.get('reason', 'UNKNOWN')}"
+        )
+
+    stop_loss = stop_result.get("stop_loss")
+
+    if stop_loss is None:
+        return reject("NO VALID STRUCTURE STOP")
+
+    try:
+        stop_loss = float(stop_loss)
+    except (TypeError, ValueError):
+        return reject("INVALID STRUCTURE STOP")
+
+    print()
+    print("[5] STRUCTURE STOP")
+    print(f"Entry        : {entry}")
+    print(f"Stop Loss    : {stop_loss}")
+    print(f"Stop Type    : {entry_type}")
+
+    if direction == "BUY" and stop_loss >= entry:
+        return reject("BUY STOP MUST BE BELOW ENTRY")
+
+    if direction == "SELL" and stop_loss <= entry:
+        return reject("SELL STOP MUST BE ABOVE ENTRY")
+
+    candle = h4.iloc[-1]
+
+    trade = build_trade(
+        direction=direction,
+        candle=candle,
+        stop_loss=stop_loss,
+        entry=entry,
+    )
+
+    if not isinstance(trade, dict):
+        return reject("RISK ENGINE FAILED")
+
+    if trade.get("valid") is not True:
+        return reject("RISK ENGINE RETURNED INVALID TRADE")
+
+    tp1 = trade.get("tp1")
+    tp2 = trade.get("tp2")
+   
+
+    if tp1 is None or tp2 is None:
+        return reject("MISSING TAKE PROFIT LEVELS")
+
+    print()
+    print("[6] RISK ENGINE")
+    print(f"Entry        : {trade['entry']}")
+    print(f"Stop Loss    : {trade['stop_loss']}")
+    print(f"Risk         : {trade['risk']}")
+    print(f"TP1          : {tp1}")
+    print(f"TP2          : {tp2}")
+   
+    signal = build_production_signal(
+        symbol=symbol,
+        direction=direction,
+        setup=setup,
+        entry=trade["entry"],
+        stop_loss=trade["stop_loss"],
+        tp1=tp1,
+        tp2=tp2,
+        confidence=confidence,
+        entry_type=entry_type,
+    )
+
+    if signal is None:
+        return reject("PRODUCTION SIGNAL BUILDER REJECTED TRADE")
+
+    signal["current_price"] = current_price
+    signal["atr"] = atr
+    signal["stop_reason"] = stop_result.get("reason")
+    signal["risk_engine"] = True
+    signal["production_signal"] = True
+
+    if not validate_signal(signal):
+        return reject("FINAL SIGNAL VALIDATION FAILED")
+
+    signal["status"] = "READY"
+
+    print()
+    print("=" * 60)
+    print("PRODUCTION SIGNAL READY")
+    print("=" * 60)
+
+    print(f"Symbol       : {signal['symbol']}")
+    print(f"Direction    : {signal['direction']}")
+    print(f"Setup        : {signal['setup']}")
+    print(f"Entry Type   : {signal['entry_type']}")
+    print(f"Entry        : {signal['entry']}")
+    print(f"Stop Loss    : {signal['stop_loss']}")
+    print(f"TP1          : {signal['tp1']}")
+    print(f"TP2          : {signal['tp2']}")
+ 
+    print(f"Risk         : {signal['risk']}")
+    print(f"RR           : {signal['rr']}")
+    print(f"Confidence   : {signal['confidence']}")
+
+    print("=" * 60)
+
+    return signal
+# ============================================================
+# STRATEGY ENGINE
+# ============================================================
 
 def evaluate_symbol(
     symbol: str,
-    market: Dict[str, Any],
+    market_data: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    """
-    Main strategy evaluation.
 
-    Pipeline
+    print()
+    print("=" * 60)
+    print(f"{symbol} | STRATEGY ENGINE")
+    print("=" * 60)
 
-        Validate Market
-              ↓
-        Detect Market Regime
-              ↓
-        Determine Daily Bias
-              ↓
-        Skip Neutral Bias
-              ↓
-        Load Existing Setup
-              ↓
-        Create New Setup
-              ↓
-        Wait For BOS
-    """
+    # --------------------------------------------------------
+    # 1. MARKET DATA
+    # --------------------------------------------------------
 
-    try:
+    if not validate_market_data(market_data):
+        return reject("MARKET DATA UNAVAILABLE")
 
-        # ==================================================
-        # VALIDATE MARKET
-        # ==================================================
+    daily = market_data["1d"]
+    h4 = market_data["4h"]
 
-        if not validate_market(market):
+    # --------------------------------------------------------
+    # CURRENT PRICE
+    # --------------------------------------------------------
 
-            if DEBUG:
-                print(f"{symbol} | Invalid Market Data")
+    current_price = get_current_price(h4)
 
-            return None
+    if current_price is None:
+        return reject("CURRENT PRICE UNAVAILABLE")
 
-        daily = market["1d"]
-        h4 = market["4h"]
+    print()
+    print(f"Current Price : {current_price}")
 
-        # ==================================================
-        # MARKET REGIME
-        # ==================================================
+    # --------------------------------------------------------
+    # 2. DAILY SETUP
+    # --------------------------------------------------------
 
-        regime = detect_market_regime(h4)
+    print()
+    print("[1] DAILY SETUP")
 
-        if regime == "RANGING":
+    daily_setup = get_daily_setup(daily)
 
-            if DEBUG:
-                print(f"{symbol} | Market Ranging")
+    if daily_setup is None:
+        return reject("NO VALID DAILY SETUP")
 
-            return None
+    direction = daily_setup["direction"]
+    setup = daily_setup["setup"]
+    level = daily_setup["level"]
+    level_index = daily_setup["level_index"]
+    daily_entry = daily_setup.get("entry")
 
-        # ==================================================
-        # DAILY BIAS
-        # ==================================================
+    print(f"Direction     : {direction}")
+    print(f"Setup         : {setup}")
+    print(f"Level         : {level}")
+    print(f"Level Index   : {level_index}")
+    print(f"Daily Entry   : {daily_entry}")
 
-        bias = get_daily_bias(daily)
+    # --------------------------------------------------------
+    # 3. ENGULFING SETUP
+    # --------------------------------------------------------
 
-        if DEBUG:
-            print(f"{symbol} | Bias : {bias}")
+    if setup in (
+        "Bullish Engulfing",
+        "Bearish Engulfing",
+    ):
 
-        # ==================================================
-        # SKIP NEUTRAL TREND
-        # ==================================================
+        print()
+        print("[2] H4 BOS")
+        print("H4 BOS       : NOT REQUIRED")
+        print(f"Setup        : {setup}")
 
-        if bias == "NEUTRAL":
+        print()
+        print("[3] ENTRY SELECTION")
+        print()
+        print("DAILY ENGULFING ENTRY")
+        print("-" * 60)
+        print(f"Direction   : {direction}")
+        print(f"Daily Entry : {daily_entry}")
+        print(f"Current     : {current_price}")
+        print("-" * 60)
 
-            if DEBUG:
-                print(f"{symbol} | Neutral Bias - Skipped")
-
-            return None
-
-        # ==================================================
-        # LOAD SAVED SETUP
-        # ==================================================
-
-        setup = get_setup(symbol)
-
-        if setup is not None:
-
-            if not validate_setup(setup):
-
-                remove_setup(symbol)
-
-                return None
-
-            # Safety check
-
-            if setup["direction"] != bias:
-
-                if DEBUG:
-                    print(f"{symbol} | Bias Changed - Setup Removed")
-
-                remove_setup(symbol)
-
-                return None
-
-        # ==================================================
-        # CREATE NEW SETUP
-        # ==================================================
-
-        if setup is None:
-
-            return create_daily_setup(
-
-                symbol=symbol,
-
-                daily=daily,
-
-                bias=bias,
-
-            )
-
-        # ==================================================
-        # WAITING FOR BOS
-        # ==================================================
-
-        if setup["status"] != "WAITING_FOR_BOS":
-
-            remove_setup(symbol)
-
-            return None
-
-        direction = setup["direction"]
-
-        # ==================================================
-        # BOS CONFIRMATION
-        # ==================================================
-
-        if direction == "BUY":
-
-            bos = bullish_bos(h4)
-
-        elif direction == "SELL":
-
-            bos = bearish_bos(h4)
-
-        else:
-
-            remove_setup(symbol)
-
-            return None
-
-        if not bos:
-
-            if DEBUG:
-                print(f"{symbol} | Waiting For BOS")
-
-            return None
-
-        print(f"{symbol} | BOS Confirmed")
-        # ==================================================
-        # ENTRY SELECTION
-        # ==================================================
-
-        entry = select_best_entry(
-            df=h4,
-            level=setup["level"],
-            direction=direction,
+        valid_entry = validate_daily_entry(
+            daily_entry
         )
 
-        if entry is None:
+        if valid_entry is None:
+            return reject("INVALID DAILY ENTRY")
 
-            if DEBUG:
-                print(f"{symbol} | No Valid Entry")
+        print("RESULT: VALID DAILY ENTRY")
 
-            return None
-
-        if not entry["entry_data"]["valid"]:
-
-            if DEBUG:
-                print(f"{symbol} | Entry Validation Failed")
-
-            return None
-
-        current_price = float(
-            h4.iloc[-1]["close"]
-        )
-
-        entry_price = entry.get("entry_price")
-
-        # ==================================================
-        # ENTRY VALIDATION
-        # ==================================================
-
-        if entry["entry_type"] == "ENGULFING":
-
-            # Market execution
-            entry_price = current_price
-
-        else:
-
-            if entry_price is None:
-
-                return None
-
-            distance = abs(
-                current_price - entry_price
-            ) / current_price
-
-            # Reject entries more than 1% away
-            if distance > 0.01:
-
-                print(
-                    f"{symbol} | Stale Entry Rejected "
-                    f"({distance * 100:.2f}% from market)"
-                )
-
-                return None
-
-        entry["entry_price"] = entry_price
-
-        print(
-            f"{symbol} | Entry : {entry['entry_type']}"
-        )
-
-        # ==================================================
-        # STOP LOSS
-        # ==================================================
-
-        stop = calculate_stop_loss(
-            df=h4,
-            entry_price=entry_price,
-            direction=direction,
-        )
-
-        if stop is None:
-
-            if DEBUG:
-                print(f"{symbol} | Stop Loss Failed")
-
-            return None
-
-        # ==================================================
-        # BUILD SIGNAL
-        # ==================================================
-
-        signal = build_signal(
-
+        return build_production_trade_signal(
             symbol=symbol,
-
             direction=direction,
-
-            setup=setup["setup"],
-
-            candle=h4.iloc[-1],
-
-            entry=entry_price,
-
-            entry_type=entry["entry_type"],
-
-            stop_loss=stop["stop_loss"],
-
+            setup=setup,
+            entry_type="ENGULFING",
+            entry=valid_entry,
+            confidence=90,
+            current_price=current_price,
+            h4=h4,
         )
 
-        if signal is None:
+    # --------------------------------------------------------
+    # 4. STRUCTURAL SETUP
+    # --------------------------------------------------------
 
-            if DEBUG:
-                print(f"{symbol} | Signal Build Failed")
+    if setup not in (
+        "V Shape",
+        "A Shape",
+    ):
+        return reject("UNSUPPORTED DAILY SETUP")
 
-            return None
+    # --------------------------------------------------------
+    # H4 BOS REQUIRED
+    # --------------------------------------------------------
 
-        # ==================================================
-        # CONFIDENCE SCORE
-        # ==================================================
+    print()
+    print("[2] H4 BOS")
 
-        score = 0
+    bos = get_h4_bos(
+        h4,
+        direction,
+    )
 
-        # BOS
-        score += 25
+    if bos is None:
+        return reject("WAITING FOR H4 BOS")
 
-        # Trend
-        if regime == "TRENDING":
-            score += 20
+    bos_level = bos["broken_level"]
 
-        # Daily Bias
-        score += 20
+    print(
+        f"BOS          : {bos.get('bos')}"
+    )
 
-        # Entry Quality
-        entry_scores = {
+    print(
+        f"Direction    : {bos.get('direction')}"
+    )
 
-            "LEFT_SHOULDER": 35,
+    print(
+        f"Broken Level : {bos_level}"
+    )
 
-            "BREAK_RETEST": 30,
+    print(
+        f"Break Index  : {bos.get('break_index')}"
+    )
 
-            "FRESH_LEVEL": 25,
+    # --------------------------------------------------------
+    # 5. ENTRY SELECTION
+    # --------------------------------------------------------
 
-            "ENGULFING": 15,
+    print()
+    print("[3] ENTRY SELECTION")
 
-        }
+    raw_entry = select_best_entry(
+        df=h4,
+        level=level,
+        direction=direction,
+        level_index=level_index,
+        bos_level=bos_level,
+        setup=setup,
+        daily_entry=daily_entry,
+    )
 
-        score += entry_scores.get(
-            entry["entry_type"],
-            0,
-        )
+    entry = validate_structural_entry(
+        raw_entry
+    )
 
-        signal["confidence"] = min(score, 100)
+    if entry is None:
+        return reject("NO VALID ENTRY")
 
-        # ==================================================
-        # CLEANUP
-        # ==================================================
+    print()
+    print("RESULT: VALID STRUCTURAL ENTRY")
 
-        remove_setup(symbol)
+    print(
+        f"Entry Type : {entry['entry_type']}"
+    )
 
-        if DEBUG:
+    print(
+        f"Entry      : {entry['entry']}"
+    )
 
-            print("=" * 60)
-            print(f"{symbol} | SIGNAL GENERATED")
-            print(f"Direction  : {direction}")
-            print(f"Entry Type : {entry['entry_type']}")
-            print(f"Confidence : {signal['confidence']}%")
-            print("=" * 60)
+    print(
+        f"Confidence : {entry['confidence']}"
+    )
 
-        return signal
+    # --------------------------------------------------------
+    # 6. FINAL SIGNAL
+    # --------------------------------------------------------
 
-    except Exception as e:
-
-        print("\n" + "=" * 60)
-        print("STRATEGY ENGINE ERROR")
-        print("=" * 60)
-        print(f"Symbol : {symbol}")
-        print(f"Error  : {e}")
-        traceback.print_exc()
-        print("=" * 60)
-
-        return None
+    return build_production_trade_signal(
+        symbol=symbol,
+        direction=direction,
+        setup=setup,
+        entry_type=entry["entry_type"],
+        entry=entry["entry"],
+        confidence=entry["confidence"],
+        current_price=current_price,
+        h4=h4,
+    )

@@ -1,4 +1,3 @@
-
 """
 =====================================================
 BLISSFINITY SIGNAL
@@ -19,7 +18,14 @@ from config.settings import (
     TELEGRAM_TOKEN,
 )
 
-from telegram.formatter import format_signal
+from telegram.formatter import (
+    format_signal,
+    format_entry,
+    format_tp,
+    format_stop,
+    format_breakeven,
+)
+
 
 # =====================================================
 # CONFIGURATION
@@ -69,7 +75,7 @@ async def send_message(text: str) -> bool:
         try:
 
             async with aiohttp.ClientSession(
-                timeout=timeout,
+                timeout=timeout
             ) as session:
 
                 async with session.post(
@@ -79,13 +85,19 @@ async def send_message(text: str) -> bool:
 
                     if response.status == 200:
 
+                        logger.info(
+                            "Telegram message sent successfully."
+                        )
+
                         return True
+
+                    error_text = await response.text()
 
                     logger.error(
                         "Telegram Error (%s/%s): %s",
                         attempt + 1,
                         MAX_RETRIES,
-                        await response.text(),
+                        error_text,
                     )
 
         except Exception:
@@ -96,7 +108,9 @@ async def send_message(text: str) -> bool:
                 MAX_RETRIES,
             )
 
-        await asyncio.sleep(2)
+        if attempt < MAX_RETRIES - 1:
+
+            await asyncio.sleep(2)
 
     return False
 
@@ -125,21 +139,24 @@ async def send_entry_hit(
     trade: dict,
 ) -> bool:
     """
-    Trade entry filled.
+    Notify that trade entry has been reached.
     """
 
+    symbol = trade.get(
+        "symbol",
+        "UNKNOWN",
+    )
+
+    direction = trade.get(
+        "direction",
+        "UNKNOWN",
+    )
+
     return await send_message(
-        f"""
-🟢 *ENTRY HIT*
-
-*Pair:* `{trade["symbol"]}`
-
-*Direction:* *{trade["direction"]}*
-
-Entry Filled
-
-Trade is now *ACTIVE*.
-"""
+        format_entry(
+            symbol,
+            direction,
+        )
     )
 
 
@@ -151,22 +168,29 @@ async def send_tp1_hit(
     trade: dict,
 ) -> bool:
     """
-    First target reached.
+    Notify that TP1 has been reached.
     """
 
-    return await send_message(
-        f"""
-🎯 *TP1 HIT*
-
-*Pair:* `{trade["symbol"]}`
-
-*Direction:* *{trade["direction"]}*
-
-✅ 50% Position Closed
-
-🔒 Stop Loss moved to Breakeven
-"""
+    symbol = trade.get(
+        "symbol",
+        "UNKNOWN",
     )
+
+    direction = trade.get(
+        "direction",
+        "UNKNOWN",
+    )
+
+    return await send_message(
+        format_tp(
+            symbol,
+            direction,
+            1,
+            "2R",
+        )
+    )
+
+
 # =====================================================
 # TP2
 # =====================================================
@@ -175,23 +199,26 @@ async def send_tp2_hit(
     trade: dict,
 ) -> bool:
     """
-    Final target reached.
+    Notify that TP2 has been reached.
     """
 
+    symbol = trade.get(
+        "symbol",
+        "UNKNOWN",
+    )
+
+    direction = trade.get(
+        "direction",
+        "UNKNOWN",
+    )
+
     return await send_message(
-        f"""
-🏆 *TP2 HIT*
-
-*Pair:* `{trade["symbol"]}`
-
-*Direction:* *{trade["direction"]}*
-
-✅ Remaining Position Closed
-
-🎉 Trade Closed
-
-Result: *WIN*
-"""
+        format_tp(
+            symbol,
+            direction,
+            2,
+            "3R",
+        )
     )
 
 
@@ -203,21 +230,24 @@ async def send_stop_loss(
     trade: dict,
 ) -> bool:
     """
-    Stop loss triggered.
+    Notify that stop loss has been triggered.
     """
 
+    symbol = trade.get(
+        "symbol",
+        "UNKNOWN",
+    )
+
+    direction = trade.get(
+        "direction",
+        "UNKNOWN",
+    )
+
     return await send_message(
-        f"""
-❌ *STOP LOSS*
-
-*Pair:* `{trade["symbol"]}`
-
-*Direction:* *{trade["direction"]}*
-
-Trade Closed.
-
-Result: *LOSS*
-"""
+        format_stop(
+            symbol,
+            direction,
+        )
     )
 
 
@@ -229,115 +259,24 @@ async def send_breakeven(
     trade: dict,
 ) -> bool:
     """
-    Trade closed at breakeven.
+    Notify that trade has closed at breakeven.
     """
 
-    return await send_message(
-        f"""
-⚪ *BREAKEVEN*
-
-*Pair:* `{trade["symbol"]}`
-
-*Direction:* *{trade["direction"]}*
-
-Trade Closed.
-
-Result: *BREAKEVEN*
-"""
+    symbol = trade.get(
+        "symbol",
+        "UNKNOWN",
     )
 
-
-# =====================================================
-# DAILY REPORT
-# =====================================================
-
-async def send_daily_report(
-    report: dict,
-) -> bool:
-    """
-    Send daily performance report.
-    """
-
-    return await send_message(
-        f"""
-📊 *DAILY REPORT*
-
-Signals: *{report['total']}*
-
-Wins: *{report['wins']}*
-
-Losses: *{report['losses']}*
-
-Breakevens: *{report['breakevens']}*
-
-Win Rate: *{report['win_rate']:.2f}%*
-
-Net R: *{report['total_rr']:.2f}R*
-
-Average R: *{report['average_rr']:.2f}R*
-"""
+    direction = trade.get(
+        "direction",
+        "UNKNOWN",
     )
 
-
-# =====================================================
-# WEEKLY REPORT
-# =====================================================
-
-async def send_weekly_report(
-    report: dict,
-) -> bool:
-    """
-    Send weekly performance report.
-    """
-
     return await send_message(
-        f"""
-📈 *WEEKLY REPORT*
-
-Trades: *{report['total']}*
-
-Wins: *{report['wins']}*
-
-Losses: *{report['losses']}*
-
-Breakevens: *{report['breakevens']}*
-
-Win Rate: *{report['win_rate']:.2f}%*
-
-Net R: *{report['total_rr']:.2f}R*
-
-Average R: *{report['average_rr']:.2f}R*
-"""
-    )
-# =====================================================
-# MONTHLY REPORT
-# =====================================================
-
-async def send_monthly_report(
-    report: dict,
-) -> bool:
-    """
-    Send monthly performance report.
-    """
-
-    return await send_message(
-        f"""
-🏆 *MONTHLY REPORT*
-
-Trades: *{report['total']}*
-
-Wins: *{report['wins']}*
-
-Losses: *{report['losses']}*
-
-Breakevens: *{report['breakevens']}*
-
-Win Rate: *{report['win_rate']:.2f}%*
-
-Net R: *{report['total_rr']:.2f}R*
-
-Average R: *{report['average_rr']:.2f}R*
-"""
+        format_breakeven(
+            symbol,
+            direction,
+        )
     )
 
 
@@ -350,27 +289,57 @@ async def send_custom_report(
     report: dict,
 ) -> bool:
     """
-    Send any statistics report.
+    Send performance statistics.
     """
 
+    total = report.get(
+        "total",
+        0,
+    )
+
+    wins = report.get(
+        "wins",
+        0,
+    )
+
+    losses = report.get(
+        "losses",
+        0,
+    )
+
+    breakevens = report.get(
+        "breakevens",
+        0,
+    )
+
+    win_rate = report.get(
+        "win_rate",
+        0,
+    )
+
+    total_rr = report.get(
+        "total_rr",
+        0,
+    )
+
+    average_rr = report.get(
+        "average_rr",
+        0,
+    )
+
+    message = (
+        f"📊 *{title}*\n\n"
+        f"Trades: *{total}*\n"
+        f"Wins: *{wins}*\n"
+        f"Losses: *{losses}*\n"
+        f"Breakevens: *{breakevens}*\n\n"
+        f"Win Rate: *{win_rate:.2f}%*\n"
+        f"Net R: *{total_rr:.2f}R*\n"
+        f"Average R: *{average_rr:.2f}R*"
+    )
+
     return await send_message(
-        f"""
-📊 *{title}*
-
-Trades: *{report.get("total", 0)}*
-
-Wins: *{report.get("wins", 0)}*
-
-Losses: *{report.get("losses", 0)}*
-
-Breakevens: *{report.get("breakevens", 0)}*
-
-Win Rate: *{report.get("win_rate", 0):.2f}%*
-
-Net R: *{report.get("total_rr", 0):.2f}R*
-
-Average R: *{report.get("average_rr", 0):.2f}R*
-"""
+        message
     )
 
 
@@ -384,13 +353,9 @@ async def send_test_message() -> bool:
     """
 
     return await send_message(
-        """
-✅ *BLISSFINITY SIGNAL*
-
-Telegram connection successful.
-
-Bot is online and ready.
-"""
+        "✅ *BLISSFINITY SIGNAL*\n\n"
+        "Telegram connection successful.\n\n"
+        "Bot is online and ready."
     )
 
 
@@ -404,17 +369,11 @@ async def send_startup_message() -> bool:
     """
 
     return await send_message(
-        """
-🚀 *BLISSFINITY SIGNAL*
-
-Production Version
-
-Scanner Started
-
-Trade Tracker Started
-
-Monitoring markets...
-"""
+        "🚀 *BLISSFINITY SIGNAL*\n\n"
+        "Production Version\n\n"
+        "Scanner Started\n"
+        "Trade Tracker Started\n\n"
+        "Monitoring markets..."
     )
 
 
@@ -428,13 +387,9 @@ async def send_shutdown_message() -> bool:
     """
 
     return await send_message(
-        """
-🛑 *BLISSFINITY SIGNAL*
-
-Bot stopped.
-
-Monitoring paused.
-"""
+        "🛑 *BLISSFINITY SIGNAL*\n\n"
+        "Bot stopped.\n\n"
+        "Monitoring paused."
     )
 
 
@@ -444,19 +399,29 @@ Monitoring paused.
 
 async def send_heartbeat() -> bool:
     """
-    Optional daily heartbeat.
+    Optional system heartbeat.
     """
 
     return await send_message(
-        """
-💚 *Bot Status*
+        "💚 *Bot Status*\n\n"
+        "System Online\n\n"
+        "Scanner Running\n"
+        "Trade Tracker Running\n\n"
+        "No issues detected."
+    )
 
-System Online
+# =====================================================
+# WEEKLY REPORT
+# =====================================================
 
-Scanner Running
+async def send_weekly_report(
+    report: dict,
+) -> bool:
+    """
+    Send weekly performance report.
+    """
 
-Trade Tracker Running
-
-No issues detected.
-"""
+    return await send_custom_report(
+        "Weekly Performance Report",
+        report,
     )

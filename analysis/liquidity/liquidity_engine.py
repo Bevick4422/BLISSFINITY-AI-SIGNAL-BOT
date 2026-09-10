@@ -1,17 +1,7 @@
-
-"""
-BLISSFINITY AI SIGNAL BOT
-LIQUIDITY ENGINE
-"""
-
 import pandas as pd
 
 
 def detect_liquidity_grab(df: pd.DataFrame):
-    """
-    Detect institutional liquidity sweeps.
-    """
-
     high = df["high"]
     low = df["low"]
     close = df["close"]
@@ -38,7 +28,7 @@ def detect_liquidity_grab(df: pd.DataFrame):
             "grab": "SELL",
             "strength": 100,
             "liquidity_sweep_high": True,
-            "liquidity_sweep_low": False
+            "liquidity_sweep_low": False,
         }
 
     if sell_side_sweep:
@@ -46,12 +36,25 @@ def detect_liquidity_grab(df: pd.DataFrame):
             "grab": "BUY",
             "strength": 100,
             "liquidity_sweep_high": False,
-            "liquidity_sweep_low": True
+            "liquidity_sweep_low": True,
         }
 
     return {
         "grab": None,
         "strength": 0,
         "liquidity_sweep_high": False,
-        "liquidity_sweep_low": False
+        "liquidity_sweep_low": False,
     }
+
+
+def detect_liquidity(df: pd.DataFrame):
+    """
+    Legacy compatibility alias.
+    """
+    return detect_liquidity_grab(df)
+
+
+__all__ = [
+    "detect_liquidity_grab",
+    "detect_liquidity",
+]

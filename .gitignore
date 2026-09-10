@@ -5,9 +5,13 @@ __pycache__/
 
 # Virtual Environment
 venv/
+.venv/
+env/
 
 # Environment Variables
 .env
+.env.local
+.env.*.local
 
 # SQLite Database
 database/*.db
@@ -16,6 +20,10 @@ database/*.db-wal
 
 # Runtime Data
 tracking/active_trades.json
+tracking/trades.json
+data/active_setups.json
+data/setups.json
+data/trades.json
 
 # Python Caches
 .pytest_cache/
@@ -34,3 +42,12 @@ Thumbs.db
 
 # Build Artifacts
 *.zip
+
+# Backup Files
+*.backup
+*.issue*-backup
+*.bak
+
+# Temporary Files
+*.tmp
+*.temp

@@ -1,4 +1,3 @@
-
 """
 =========================================================
 BLISSFINITY SIGNAL
@@ -15,27 +14,40 @@ import ccxt
 
 from config.crypto_universe import CRYPTO_UNIVERSE
 
+
 # ==========================================================
 # LOGGING
 # ==========================================================
 
 logger = logging.getLogger("Config")
 
+
 # ==========================================================
 # TELEGRAM
 # ==========================================================
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_TOKEN = os.getenv(
+    "TELEGRAM_TOKEN",
+    "",
+).strip()
+
+TELEGRAM_CHAT_ID = os.getenv(
+    "TELEGRAM_CHAT_ID",
+    "",
+).strip()
+
 
 # ==========================================================
 # BOT SETTINGS
 # ==========================================================
 
-SCAN_INTERVAL = 60               # Seconds
-MIN_DAILY_SIGNALS = 3
-MAX_DAILY_SIGNALS = 4
+SCAN_INTERVAL = 60
+TRADE_MONITOR_INTERVAL = 2
+
+MIN_DAILY_SIGNALS = 0
+MAX_DAILY_SIGNALS = 2
 MAX_PAIRS = 100
+
 
 # ==========================================================
 # TIMEFRAMES
@@ -43,7 +55,8 @@ MAX_PAIRS = 100
 
 TREND_TIMEFRAME = "4h"
 BOS_TIMEFRAME = "4h"
-ENTRY_TIMEFRAME = "15m"
+ENTRY_TIMEFRAME = "4h"
+
 
 # ==========================================================
 # RISK SETTINGS
@@ -51,6 +64,7 @@ ENTRY_TIMEFRAME = "15m"
 
 DEFAULT_RISK_REWARD = 2
 MAX_STALE_ENTRY_PERCENT = 2.0
+
 
 # ==========================================================
 # MEXC EXCHANGE
@@ -66,6 +80,7 @@ exchange = ccxt.mexc(
     }
 )
 
+
 # ==========================================================
 # LOAD SYMBOLS
 # ==========================================================
@@ -78,13 +93,11 @@ def get_symbols() -> list[str]:
     logger.info("Loading MEXC perpetual futures...")
 
     try:
-
         exchange.load_markets()
 
         symbols = []
 
         for symbol, market in exchange.markets.items():
-
             if not market.get("active"):
                 continue
 
@@ -116,7 +129,6 @@ def get_symbols() -> list[str]:
         return symbols[:MAX_PAIRS]
 
     except Exception:
-
         logger.exception(
             "Unable to load markets."
         )
@@ -136,19 +148,28 @@ SYMBOLS = get_symbols()
 # ==========================================================
 
 logger.info("=" * 60)
-logger.info("BLISSFINITY AI SIGNAL BOT")
+logger.info("BLISSFINITY SIGNAL")
 logger.info("=" * 60)
-logger.info("Trading Pairs : %d", len(SYMBOLS))
-logger.info("Scan Interval : %s seconds", SCAN_INTERVAL)
+
+logger.info(
+    "Trading Pairs : %d",
+    len(SYMBOLS),
+)
+
+logger.info(
+    "Scan Interval : %s seconds",
+    SCAN_INTERVAL,
+)
+
+logger.info(
+    "Trade Monitor : %s seconds",
+    TRADE_MONITOR_INTERVAL,
+)
+
 logger.info(
     "Daily Signals : %d - %d",
     MIN_DAILY_SIGNALS,
     MAX_DAILY_SIGNALS,
 )
+
 logger.info("=" * 60)
-
-# =====================================================
-# TRADE TRACKER
-# =====================================================
-
-TRACKER_INTERVAL = 15  # seconds

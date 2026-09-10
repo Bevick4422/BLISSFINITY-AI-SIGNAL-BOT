@@ -1,6 +1,6 @@
 """
 =====================================================
-BLISSFINITY AI SIGNAL BOT
+BLISSFINITY SIGNAL 
 Telegram Formatter
 =====================================================
 """
@@ -23,7 +23,28 @@ def utc_time() -> str:
 # =====================================================
 
 def direction_emoji(direction: str) -> str:
-    return "🟢" if direction.upper() == "BUY" else "🔴"
+
+    direction = direction.upper()
+
+    if direction == "BUY":
+        return "🟢"
+
+    if direction == "SELL":
+        return "🔴"
+
+    return "⚪"
+
+
+# =====================================================
+# SYMBOL CLEANER
+# =====================================================
+
+def clean_symbol(symbol: str) -> str:
+
+    if not symbol:
+        return symbol
+
+    return symbol.replace(":USDT", "")
 
 
 # =====================================================
@@ -33,42 +54,65 @@ def direction_emoji(direction: str) -> str:
 def format_signal(signal: dict) -> str:
 
     symbol = signal.get("symbol") or signal.get("pair")
-    direction = signal.get("direction") or signal.get("side")
 
-    # Clean symbols like ONDO/USDT:USDT -> ONDO/USDT
-    if symbol and ":USDT" in symbol:
-        symbol = symbol.replace(":USDT", "")
+    direction = (
+        signal.get("direction")
+        or signal.get("side")
+        or ""
+    )
+
+    symbol = clean_symbol(symbol)
 
     return (
-        f"🚨 *BLISSFINITY SIGNAL*\n\n"
-        f"📈 *Pair*\n"
+        "🚨 *BLISSFINITY SIGNAL*\n\n"
+
+        "📈 *Pair*\n"
         f"`{symbol}`\n\n"
+
         f"{direction_emoji(direction)} *Direction*\n"
         f"{direction}\n\n"
-        f"🎯 *Entry*\n"
+
+        "🎯 *Entry*\n"
         f"`{signal['entry']:.6f}`\n\n"
-        f"🛑 *Stop Loss*\n"
+
+        "🛑 *Stop Loss*\n"
         f"`{signal['stop_loss']:.6f}`\n\n"
-        f"🥇 *Take Profit 1*\n"
+
+        "🥇 *Take Profit 1*\n"
         f"`{signal['tp1']:.6f}`\n\n"
-        f"🥈 *Take Profit 2*\n"
+
+        "🥈 *Take Profit 2*\n"
         f"`{signal['tp2']:.6f}`\n\n"
-        f"⚖️ *Risk : Reward*\n"
+
+        "⚖️ *Risk : Reward*\n"
         f"1 : {signal.get('rr', 2)}\n\n"
-        f"📊 *Confidence*\n"
+
+        "📊 *Confidence*\n"
         f"{signal.get('confidence', 80)}%\n\n"
+
         f"🕒 {utc_time()}"
     )
+
+
 # =====================================================
 # ENTRY
 # =====================================================
 
-def format_entry(symbol: str, direction: str) -> str:
+def format_entry(
+    symbol: str,
+    direction: str,
+) -> str:
+
+    symbol = clean_symbol(symbol)
 
     return (
-        f"🟢 *ENTRY HIT*\n\n"
+        "🟢 *ENTRY HIT*\n\n"
+
         f"📈 Pair: `{symbol}`\n"
-        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
+
+        f"{direction_emoji(direction)} "
+        f"Direction: *{direction}*\n\n"
+
         "Trade is now ACTIVE."
     )
 
@@ -84,11 +128,18 @@ def format_tp(
     rr: str,
 ) -> str:
 
+    symbol = clean_symbol(symbol)
+
     return (
         f"🎯 *TAKE PROFIT {level}*\n\n"
+
         f"📈 Pair: `{symbol}`\n"
-        f"{direction_emoji(direction)} Direction: *{direction}*\n"
+
+        f"{direction_emoji(direction)} "
+        f"Direction: *{direction}*\n"
+
         f"⚖️ Reward: *{rr}*\n\n"
+
         "Excellent execution 🚀"
     )
 
@@ -102,10 +153,16 @@ def format_stop(
     direction: str,
 ) -> str:
 
+    symbol = clean_symbol(symbol)
+
     return (
-        f"🔴 *STOP LOSS HIT*\n\n"
+        "🔴 *STOP LOSS HIT*\n\n"
+
         f"📈 Pair: `{symbol}`\n"
-        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
+
+        f"{direction_emoji(direction)} "
+        f"Direction: *{direction}*\n\n"
+
         "Trade closed."
     )
 
@@ -119,9 +176,15 @@ def format_breakeven(
     direction: str,
 ) -> str:
 
+    symbol = clean_symbol(symbol)
+
     return (
-        f"⚪ *BREAKEVEN*\n\n"
+        "⚪ *BREAKEVEN*\n\n"
+
         f"📈 Pair: `{symbol}`\n"
-        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
+
+        f"{direction_emoji(direction)} "
+        f"Direction: *{direction}*\n\n"
+
         "Trade closed at break-even."
     )

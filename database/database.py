@@ -1,6 +1,6 @@
 """
 =====================================================
-BLISSFINITY AI SIGNAL BOT
+BLISSFINITY SIGNAL
 SQLite Database Connection
 =====================================================
 """

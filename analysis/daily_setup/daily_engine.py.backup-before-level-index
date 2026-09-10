@@ -1,0 +1,202 @@
+"""
+BLISSFINITY SIGNAL
+Daily Setup Engine
+
+Priority:
+
+1. Bullish Engulfing
+2. Bearish Engulfing
+3. Fresh V Shape
+4. Fresh A Shape
+
+Freshness definition:
+
+A V/A level is fresh only if price has NOT touched
+the level after the level was created.
+
+Wick touch = mitigation.
+Body touch = mitigation.
+Penetration = mitigation.
+"""
+
+from analysis.daily_setup.engulfing import (
+    bullish_engulfing,
+    bearish_engulfing,
+)
+
+from analysis.daily_setup.keylevels import (
+    _find_v_shape_info,
+    _find_a_shape_info,
+)
+
+from analysis.daily_setup.fresh_levels import (
+    is_fresh_support,
+    is_fresh_resistance,
+)
+
+
+DEBUG = True
+
+
+def detect_daily_setup(df):
+    """
+    Detect the highest-priority Daily setup.
+
+    Returns:
+
+        {
+            "direction": "BUY" | "SELL" | None,
+            "setup": str,
+            "level": float | None,
+            "valid": bool,
+        }
+    """
+
+    # ==================================================
+    # ENGULFING
+    # ==================================================
+
+    bullish = bullish_engulfing(df)
+    bearish = bearish_engulfing(df)
+
+    # ==================================================
+    # V / A STRUCTURES
+    # ==================================================
+
+    v_info = _find_v_shape_info(df)
+    a_info = _find_a_shape_info(df)
+
+    v_level = (
+        v_info["level"]
+        if v_info is not None
+        else None
+    )
+
+    a_level = (
+        a_info["level"]
+        if a_info is not None
+        else None
+    )
+
+    # ==================================================
+    # FRESHNESS
+    # ==================================================
+
+    fresh_support = (
+        is_fresh_support(
+            df,
+            v_level,
+            v_info["index"],
+        )
+        if v_info is not None
+        else False
+    )
+
+    fresh_resistance = (
+        is_fresh_resistance(
+            df,
+            a_level,
+            a_info["index"],
+        )
+        if a_info is not None
+        else False
+    )
+
+    # ==================================================
+    # DEBUG
+    # ==================================================
+
+    if DEBUG:
+
+        print("\n" + "=" * 60)
+        print("DAILY SETUP DEBUG")
+        print("=" * 60)
+
+        print(
+            f"Bullish Engulfing : {bullish}"
+        )
+
+        print(
+            f"Bearish Engulfing : {bearish}"
+        )
+
+        print(
+            f"V Shape Level     : {v_level}"
+        )
+
+        print(
+            f"V Shape Fresh     : {fresh_support}"
+        )
+
+        print(
+            f"A Shape Level     : {a_level}"
+        )
+
+        print(
+            f"A Shape Fresh     : {fresh_resistance}"
+        )
+
+        print("=" * 60)
+
+    # ==================================================
+    # 1. BULLISH ENGULFING
+    # ==================================================
+
+    if bullish:
+
+        return {
+            "direction": "BUY",
+            "setup": "Bullish Engulfing",
+            "level": None,
+            "valid": True,
+        }
+
+    # ==================================================
+    # 2. BEARISH ENGULFING
+    # ==================================================
+
+    if bearish:
+
+        return {
+            "direction": "SELL",
+            "setup": "Bearish Engulfing",
+            "level": None,
+            "valid": True,
+        }
+
+    # ==================================================
+    # 3. FRESH V SHAPE
+    # ==================================================
+
+    if fresh_support:
+
+        return {
+            "direction": "BUY",
+            "setup": "V Shape",
+            "level": v_level,
+            "valid": True,
+        }
+
+    # ==================================================
+    # 4. FRESH A SHAPE
+    # ==================================================
+
+    if fresh_resistance:
+
+        return {
+            "direction": "SELL",
+            "setup": "A Shape",
+            "level": a_level,
+            "valid": True,
+        }
+
+    # ==================================================
+    # NO VALID SETUP
+    # ==================================================
+
+    return {
+        "direction": None,
+        "setup": "NONE",
+        "level": None,
+        "valid": False,
+    }

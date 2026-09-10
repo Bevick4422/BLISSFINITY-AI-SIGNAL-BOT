@@ -84,3 +84,10 @@ def detect_momentum(df: pd.DataFrame):
         "ema_slope": round(float(ema_now - ema_prev), 4)
 
     }
+
+# Compatibility alias
+analyze_momentum = detect_momentum
+
+
+# Compatibility alias
+analyze_momentum = detect_momentum

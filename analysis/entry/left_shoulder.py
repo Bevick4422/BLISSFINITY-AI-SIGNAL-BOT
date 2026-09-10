@@ -1,211 +1,350 @@
-
 """
-=====================================================
-BLISSFINITY AI SIGNAL BOT
-Production Left Shoulder Engine v7
-=====================================================
+BLISSFINITY SIGNAL
+Left Shoulder Entry Engine
+
+Purpose:
+    Detect a structural Left Shoulder entry around a confirmed
+    Daily V Shape / A Shape level.
+
+Sequence:
+
+    Break #1
+        ↓
+    Pullback / Retest
+        ↓
+    Break #2
+        ↓
+    LEFT SHOULDER ENTRY
+
+Rules:
+    - BUY requires strong closes above the level.
+    - SELL requires strong closes below the level.
+    - Pullback must touch the key level.
+    - Wick touch is sufficient for the pullback.
+    - A decisive close through the level invalidates the structure.
+    - Uses the most recent valid structure.
+    - No EMA.
+    - No indicators.
+    - No arbitrary time expiry.
 """
 
 from __future__ import annotations
 
-import traceback
-from typing import Dict
+from typing import Any, Dict
 
 import pandas as pd
 
+
+# ==========================================================
+# SETTINGS
+# ==========================================================
 
 BODY_CLOSE_PERCENT = 0.60
 MIN_REQUIRED_CANDLES = 10
 
 
-# =====================================================
-# FULL BODY CANDLE
-# =====================================================
+# ==========================================================
+# RESULT HELPERS
+# ==========================================================
 
-def is_full_body_candle(candle) -> bool:
-    """
-    True if candle body is at least 60% of total range.
-    """
+def no_left_shoulder(reason: str) -> Dict[str, Any]:
+    return {
+        "valid": False,
+        "entry_type": None,
+        "entry": None,
+        "left_shoulder": None,
+        "confidence": 0,
+        "reason": reason,
+    }
 
+
+# ==========================================================
+# STRONG BODY
+# ==========================================================
+
+def is_strong_body(candle: pd.Series) -> bool:
     try:
+        open_price = float(candle["open"])
+        close = float(candle["close"])
+        high = float(candle["high"])
+        low = float(candle["low"])
 
-        body = abs(float(candle["close"]) - float(candle["open"]))
-        total = float(candle["high"]) - float(candle["low"])
-
-        if total <= 0:
-            return False
-
-        return (body / total) >= BODY_CLOSE_PERCENT
-
-    except Exception:
-
+    except (KeyError, TypeError, ValueError):
         return False
 
+    candle_range = high - low
 
-# =====================================================
-# BREAK DETECTION
-# =====================================================
+    if candle_range <= 0:
+        return False
 
-def detect_break(
+    body = abs(close - open_price)
+
+    return (
+        body / candle_range
+        >= BODY_CLOSE_PERCENT
+    )
+
+
+# ==========================================================
+# STRUCTURAL BREAK
+# ==========================================================
+
+def is_break(
+    candle: pd.Series,
     level: float,
-    candle,
     direction: str,
 ) -> bool:
-    """
-    Detect a valid structure break using a strong candle.
-    """
 
-    if not is_full_body_candle(candle):
+    if direction not in ("BUY", "SELL"):
         return False
 
-    close = float(candle["close"])
+    if not is_strong_body(candle):
+        return False
+
+    try:
+        open_price = float(candle["open"])
+        close = float(candle["close"])
+
+    except (KeyError, TypeError, ValueError):
+        return False
 
     if direction == "BUY":
-        return close > level
 
-    if direction == "SELL":
+        return (
+            close > level
+            and close > open_price
+        )
+
+    return (
+        close < level
+        and close < open_price
+    )
+
+
+# ==========================================================
+# LEVEL TOUCH
+# ==========================================================
+
+def touches_level(
+    candle: pd.Series,
+    level: float,
+) -> bool:
+
+    try:
+        low = float(candle["low"])
+        high = float(candle["high"])
+
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    return (
+        low <= level <= high
+    )
+
+
+# ==========================================================
+# INVALIDATION
+# ==========================================================
+
+def invalidates_structure(
+    candle: pd.Series,
+    level: float,
+    direction: str,
+) -> bool:
+
+    try:
+        close = float(candle["close"])
+
+    except (KeyError, TypeError, ValueError):
+        return True
+
+    if direction == "BUY":
         return close < level
 
-    return False
+    if direction == "SELL":
+        return close > level
+
+    return True
 
 
-# =====================================================
-# PULLBACK DETECTION
-# =====================================================
-
-def detect_pullback(
-    level: float,
-    candle,
-) -> bool:
-    """
-    True if price revisits the broken level.
-    """
-
-    low = float(candle["low"])
-    high = float(candle["high"])
-
-    return low <= level <= high
-
-
-# =====================================================
-# LEFT SHOULDER DETECTION
-# =====================================================
+# ==========================================================
+# LEFT SHOULDER ENGINE
+# ==========================================================
 
 def detect_left_shoulder(
     df: pd.DataFrame,
     level: float,
     direction: str,
-) -> Dict:
-    """
-    Detect a valid Left Shoulder.
+) -> Dict[str, Any]:
 
-    Sequence
+    if df is None:
+        return no_left_shoulder(
+            "No H4 market data"
+        )
 
-    Break #1
-        ↓
-    Pullback
-        ↓
-    Break #2
-        ↓
-    Left Shoulder confirmed
-    """
+    if not isinstance(df, pd.DataFrame):
+        return no_left_shoulder(
+            "Invalid H4 market data"
+        )
+
+    if len(df) < MIN_REQUIRED_CANDLES:
+        return no_left_shoulder(
+            "Not enough H4 candles"
+        )
+
+    if direction not in ("BUY", "SELL"):
+        return no_left_shoulder(
+            "Invalid direction"
+        )
+
+    if level is None:
+        return no_left_shoulder(
+            "No key level"
+        )
 
     try:
+        level = float(level)
 
-        if df is None or len(df) < MIN_REQUIRED_CANDLES:
+    except (TypeError, ValueError):
+        return no_left_shoulder(
+            "Invalid key level"
+        )
 
-            return {
-                "valid": False,
-                "entry_type": None,
-                "left_shoulder": None,
-                "confidence": 0,
-                "reason": "Not enough candles",
-            }
+    if level <= 0:
+        return no_left_shoulder(
+            "Invalid key level"
+        )
 
-        break1 = False
-        pullback = False
+    candles = df.reset_index(drop=False)
 
-        for _, candle in df.iterrows():
+    latest = len(candles) - 1
 
-            # ------------------------------------------
-            # BREAK #1
-            # ------------------------------------------
+    # ======================================================
+    # SEARCH FROM MOST RECENT BREAK #2
+    # ======================================================
 
-            if not break1:
+    for break2_position in range(
+        latest,
+        1,
+        -1,
+    ):
 
-                if detect_break(level, candle, direction):
+        break2 = candles.iloc[
+            break2_position
+        ]
 
-                    break1 = True
+        if not is_break(
+            break2,
+            level,
+            direction,
+        ):
+            continue
 
+        # ==================================================
+        # SEARCH BACKWARD FOR PULLBACK
+        # ==================================================
+
+        for pullback_position in range(
+            break2_position - 1,
+            0,
+            -1,
+        ):
+
+            pullback = candles.iloc[
+                pullback_position
+            ]
+
+            if not touches_level(
+                pullback,
+                level,
+            ):
                 continue
 
-            # ------------------------------------------
-            # PULLBACK
-            # ------------------------------------------
+            # ==============================================
+            # CHECK INVALIDATION BETWEEN PULLBACK AND BREAK2
+            # ==============================================
 
-            if break1 and not pullback:
+            invalidated = False
 
-                if detect_pullback(level, candle):
+            for position in range(
+                pullback_position + 1,
+                break2_position,
+            ):
 
-                    pullback = True
+                candle = candles.iloc[
+                    position
+                ]
 
+                if invalidates_structure(
+                    candle,
+                    level,
+                    direction,
+                ):
+
+                    invalidated = True
+                    break
+
+            if invalidated:
                 continue
 
-            # ------------------------------------------
-            # BREAK #2
-            # ------------------------------------------
+            # ==================================================
+            # SEARCH BACKWARD FOR BREAK #1
+            # ==================================================
 
-            if break1 and pullback:
+            for break1_position in range(
+                pullback_position - 1,
+                -1,
+                -1,
+            ):
 
-                if detect_break(level, candle, direction):
+                break1 = candles.iloc[
+                    break1_position
+                ]
 
-                    return {
+                if not is_break(
+                    break1,
+                    level,
+                    direction,
+                ):
+                    continue
 
-                        "valid": True,
+                # ==================================================
+                # CONFIRMED LEFT SHOULDER
+                # ==================================================
 
-                        "entry_type": "LEFT_SHOULDER",
+                return {
+                    "valid": True,
+                    "entry_type": "LEFT_SHOULDER",
+                    "entry": float(level),
+                    "left_shoulder": float(level),
+                    "confidence": 95,
+                    "reason": (
+                        "Break1 → Pullback → Break2 "
+                        "Left Shoulder confirmed"
+                    ),
+                    "break1_index": int(
+                        break1_position
+                    ),
+                    "pullback_index": int(
+                        pullback_position
+                    ),
+                    "break2_index": int(
+                        break2_position
+                    ),
+                }
 
-                        "left_shoulder": round(level, 4),
+    return no_left_shoulder(
+        "No valid Left Shoulder structure"
+    )
 
-                        "confidence": 95,
 
-                        "reason": "Break1 → Pullback → Break2",
+# ==========================================================
+# EXPORT
+# ==========================================================
 
-                    }
-
-        return {
-
-            "valid": False,
-
-            "entry_type": None,
-
-            "left_shoulder": None,
-
-            "confidence": 0,
-
-            "reason": "No Left Shoulder",
-
-        }
-
-    except Exception as e:
-
-        print("\n" + "=" * 60)
-        print("LEFT SHOULDER ENGINE ERROR")
-        print("=" * 60)
-        print(f"Error : {e}")
-        traceback.print_exc()
-        print("=" * 60)
-
-        return {
-
-            "valid": False,
-
-            "entry_type": None,
-
-            "left_shoulder": None,
-
-            "confidence": 0,
-
-            "reason": "Engine Error",
-
-        }
+__all__ = [
+    "detect_left_shoulder",
+    "is_strong_body",
+    "is_break",
+    "touches_level",
+]

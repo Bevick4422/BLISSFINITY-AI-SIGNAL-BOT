@@ -1,6 +1,6 @@
 """
 =====================================================
-BLISSFINITY AI SIGNAL BOT
+BLISSFINITY SIGNAL 
 Market Data Fetcher
 =====================================================
 """
