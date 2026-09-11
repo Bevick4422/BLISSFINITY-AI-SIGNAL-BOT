@@ -223,6 +223,7 @@ def record_signal(
 
         "tp1_hit": False,
         "break_even": False,
+        "last_monitored_candle": None,
 
         # Persistent notification protection.
         "entry_notified": False,
@@ -400,9 +401,19 @@ def _close_trade(
 def update_trade(
     trade_id: str,
     current_price: float,
+    candle_high: float | None = None,
+    candle_low: float | None = None,
+    candle_timestamp: int | None = None,
 ) -> dict[str, Any] | None:
     """
-    Update one trade using the latest market price.
+    Update one trade.
+
+    The existing current-price behaviour is preserved when
+    candle data is not supplied.
+
+    When completed candle high/low values are supplied,
+    they allow TP/SL touches to be detected even when
+    price has moved away before the next polling cycle.
     """
 
     trades = _load_trades()
@@ -420,39 +431,77 @@ def update_trade(
         }:
             return trade
 
-        entry = float(
-            trade["entry"]
-        )
-
-        stop_loss = float(
-            trade["stop_loss"]
-        )
-
-        tp1 = float(
-            trade["tp1"]
-        )
-
-        tp2 = float(
-            trade["tp2"]
-        )
+        entry = float(trade["entry"])
+        stop_loss = float(trade["stop_loss"])
+        tp1 = float(trade["tp1"])
+        tp2 = float(trade["tp2"])
 
         price = float(current_price)
+
         direction = str(
             trade["direction"]
         ).upper()
+
+        # -------------------------------------------------
+        # Use candle extremes when supplied.
+        # Otherwise preserve original ticker behaviour.
+        # -------------------------------------------------
+
+        high = (
+            float(candle_high)
+            if candle_high is not None
+            else price
+        )
+
+        low = (
+            float(candle_low)
+            if candle_low is not None
+            else price
+        )
+
+        # -------------------------------------------------
+        # Prevent the same candle being processed twice.
+        # -------------------------------------------------
+
+        if candle_timestamp is not None:
+
+            previous_candle = trade.get(
+                "last_monitored_candle"
+            )
+
+            if previous_candle is not None:
+
+                try:
+                    if int(candle_timestamp) <= int(
+                        previous_candle
+                    ):
+                        return trade
+
+                except (TypeError, ValueError):
+                    pass
 
         # -------------------------------------------------
         # PENDING -> OPEN
         # -------------------------------------------------
 
         if status == "PENDING":
+
             reached_entry = (
-                price >= entry
+                high >= entry
                 if direction == "BUY"
-                else price <= entry
+                else low <= entry
             )
 
             if not reached_entry:
+
+                if candle_timestamp is not None:
+                    trade["last_monitored_candle"] = int(
+                        candle_timestamp
+                    )
+
+                trade["updated_at"] = _now()
+                _save_trades(trades)
+
                 return trade
 
             now = _now()
@@ -465,54 +514,109 @@ def update_trade(
             _add_event(
                 trade,
                 "ENTRY_REACHED",
-                price,
+                entry,
             )
 
-            status = "OPEN"
+            # The entry candle is not also used to determine
+            # TP/SL because OHLC data cannot establish the
+            # intrabar order of those events.
+
+            if candle_timestamp is not None:
+                trade["last_monitored_candle"] = int(
+                    candle_timestamp
+                )
+
+            _save_trades(trades)
+
+            return trade
 
         # -------------------------------------------------
         # OPEN TRADE MANAGEMENT
         # -------------------------------------------------
 
         if status == "OPEN":
+
             if direction == "BUY":
-                stopped = price <= stop_loss
-                reached_tp1 = price >= tp1
-                reached_tp2 = price >= tp2
+
+                stopped = low <= stop_loss
+                reached_tp1 = high >= tp1
+                reached_tp2 = high >= tp2
 
             else:
-                stopped = price >= stop_loss
-                reached_tp1 = price <= tp1
-                reached_tp2 = price <= tp2
 
-            # Stop-loss is checked first.
+                stopped = high >= stop_loss
+                reached_tp1 = low <= tp1
+                reached_tp2 = low <= tp2
+
+            # -------------------------------------------------
+            # If both SL and a target were touched in the same
+            # candle, OHLC cannot prove which happened first.
+            # Do not invent an outcome.
+            # -------------------------------------------------
+
+            if stopped and (
+                reached_tp1 or reached_tp2
+            ):
+
+                _add_event(
+                    trade,
+                    "AMBIGUOUS_CANDLE",
+                    price,
+                )
+
+                if candle_timestamp is not None:
+                    trade["last_monitored_candle"] = int(
+                        candle_timestamp
+                    )
+
+                trade["updated_at"] = _now()
+                _save_trades(trades)
+
+                return trade
+
+            # -------------------------------------------------
+            # STOP LOSS
+            # -------------------------------------------------
+
             if stopped:
+
                 if trade.get("break_even"):
+
                     _close_trade(
                         trade,
                         "BREAKEVEN",
                         entry,
                     )
+
                 else:
+
                     _close_trade(
                         trade,
                         "LOSS",
                         stop_loss,
                     )
 
-            # TP2 closes the trade as a win.
+            # -------------------------------------------------
+            # TP2
+            # -------------------------------------------------
+
             elif reached_tp2:
+
                 _close_trade(
                     trade,
                     "WIN",
                     tp2,
                 )
 
-            # TP1 moves stop-loss to entry.
+            # -------------------------------------------------
+            # TP1 -> MOVE STOP TO ENTRY
+            # -------------------------------------------------
+
             elif (
                 reached_tp1
                 and not trade.get("tp1_hit")
             ):
+
                 trade["tp1_hit"] = True
                 trade["break_even"] = True
                 trade["stop_loss"] = entry
@@ -523,7 +627,7 @@ def update_trade(
                 _add_event(
                     trade,
                     "TP1_REACHED",
-                    price,
+                    tp1,
                 )
 
                 _add_event(
@@ -532,11 +636,16 @@ def update_trade(
                     entry,
                 )
 
-        trade["updated_at"] = _now()
+            if candle_timestamp is not None:
+                trade["last_monitored_candle"] = int(
+                    candle_timestamp
+                )
 
-        _save_trades(trades)
+            trade["updated_at"] = _now()
 
-        return trade
+            _save_trades(trades)
+
+            return trade
 
     return None
 
