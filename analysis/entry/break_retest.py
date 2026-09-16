@@ -1,387 +1,124 @@
 """
-BLISSFINITY SIGNAL
-Break & Retest Entry Detection
+BLISSFINITY SIGNAL — Break & Retest Entry
 
-BUY:
-    1. Strong close above the V/A level.
-    2. Price returns and touches the level.
-    3. Retest candle closes back above the level.
-    4. A close below the level invalidates the sequence.
-
-SELL:
-    1. Strong close below the V/A level.
-    2. Price returns and touches the level.
-    3. Retest candle closes back below the level.
-    4. A close above the level invalidates the sequence.
-
-Important:
-    A wick touching the level counts as a retest.
-    A body touching the level also counts as a retest.
-
-The detector searches from the most recent candles backward so that
-an old historical setup is not incorrectly returned as the current entry.
+LOCKED RULES
+------------
+- Break uses the same H4 BOS full-body rule.
+- Completed candle body must cross the level and close beyond it.
+- Wick-only break is invalid.
+- After the break, price must return to the broken level.
+- Wick touch OR penetration is enough for the retest.
+- No candle-colour or close confirmation is required.
+- No retest = NO SIGNAL / never chase.
+- SL reference = wick of the candle that established the broken Key Level.
 """
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
 
-MIN_REQUIRED_CANDLES = 5
-BODY_CLOSE_PERCENT = 0.60
+def _invalid(reason: str) -> Dict[str, Any]:
+    return {
+        "valid": False,
+        "entry_type": "BREAK_RETEST",
+        "entry": None,
+        "break_index": None,
+        "retest_index": None,
+        "retest_timestamp": None,
+        "broken_level": None,
+        "stop_reference": None,
+        "reason": reason,
+    }
 
 
-# ==========================================================
-# STRONG BREAK CANDLE
-# ==========================================================
-
-def is_strong_break_candle(candle) -> bool:
-    """
-    Require the breakout candle to have a body covering at least
-    60% of its total candle range.
-    """
-
-    try:
-        high = float(candle["high"])
-        low = float(candle["low"])
-        open_price = float(candle["open"])
-        close = float(candle["close"])
-
-        total_range = high - low
-
-        if total_range <= 0:
-            return False
-
-        body = abs(close - open_price)
-
-        return (body / total_range) >= BODY_CLOSE_PERCENT
-
-    except (KeyError, TypeError, ValueError):
-        return False
-
-
-# ==========================================================
-# LEVEL TOUCH
-# ==========================================================
-
-def candle_touches_level(candle, level: float) -> bool:
-    """
-    True when the candle wick or body reaches the level.
-    """
-
-    try:
-        low = float(candle["low"])
-        high = float(candle["high"])
-
-        return low <= level <= high
-
-    except (KeyError, TypeError, ValueError):
-        return False
-
-
-# ==========================================================
-# BREAK CONFIRMATION
-# ==========================================================
-
-def confirms_break(
-    candle,
-    level: float,
-    direction: str,
-) -> bool:
-    """
-    Confirm a valid structural break.
-
-    BUY:
-        Strong bullish close above level.
-
-    SELL:
-        Strong bearish close below level.
-    """
-
-    if not is_strong_break_candle(candle):
-        return False
-
-    try:
-        open_price = float(candle["open"])
-        close = float(candle["close"])
-
-    except (KeyError, TypeError, ValueError):
-        return False
-
-    if direction == "BUY":
-
-        return (
-            close > level
-            and close > open_price
-        )
+def _body_breaks(candle: pd.Series, level: float, direction: str) -> bool:
+    o = float(candle["open"])
+    c = float(candle["close"])
 
     if direction == "SELL":
+        return o >= level and c < level
 
-        return (
-            close < level
-            and close < open_price
-        )
+    if direction == "BUY":
+        return o <= level and c > level
 
     return False
 
 
-# ==========================================================
-# RETEST INVALIDATION
-# ==========================================================
+def _touches(candle: pd.Series, level: float) -> bool:
+    return float(candle["low"]) <= level <= float(candle["high"])
 
-def retest_invalidates(
-    candle,
-    level: float,
-    direction: str,
-) -> bool:
-    """
-    Determine whether the retest has invalidated the setup.
-
-    BUY:
-        Close below level = invalid.
-
-    SELL:
-        Close above level = invalid.
-
-    Wick through the level alone does NOT invalidate the setup.
-    """
-
-    try:
-        close = float(candle["close"])
-
-    except (KeyError, TypeError, ValueError):
-        return True
-
-    if direction == "BUY":
-
-        return close < level
-
-    if direction == "SELL":
-
-        return close > level
-
-    return True
-
-
-# ==========================================================
-# RETEST CONFIRMATION
-# ==========================================================
-
-def confirms_retest(
-    candle,
-    level: float,
-    direction: str,
-) -> bool:
-    """
-    Confirm that price touched the level and closed back
-    on the correct side.
-    """
-
-    if not candle_touches_level(candle, level):
-        return False
-
-    try:
-        close = float(candle["close"])
-
-    except (KeyError, TypeError, ValueError):
-        return False
-
-    if direction == "BUY":
-
-        return close > level
-
-    if direction == "SELL":
-
-        return close < level
-
-    return False
-
-
-# ==========================================================
-# BREAK & RETEST ENGINE
-# ==========================================================
 
 def detect_break_retest(
     df: pd.DataFrame,
     level: float,
     direction: str,
-) -> Dict:
+    level_index: Optional[int] = None,
+    bos_index: Optional[int] = None,
+) -> Dict[str, Any]:
     """
-    Detect the most recent valid Break & Retest setup.
+    Find the retest after the supplied BOS.
 
-    Sequence:
-
-        BREAK
-          ↓
-        RETEST
-          ↓
-        CONFIRMATION
-          ↓
-        ENTRY
-
-    Returns a structured result compatible with the entry selector.
+    bos_index is mandatory. The function does not search for an unrelated
+    break elsewhere in the dataframe.
     """
+    if df is None or len(df) < 2:
+        return _invalid("Insufficient completed H4 candles")
+
+    if direction not in ("BUY", "SELL"):
+        return _invalid("Invalid direction")
+
+    if level is None:
+        return _invalid("Broken level is required")
+
+    if bos_index is None:
+        return _invalid("BOS index is required")
 
     try:
-
-        # --------------------------------------------------
-        # VALIDATION
-        # --------------------------------------------------
-
-        if df is None:
-
-            return {
-                "valid": False,
-                "entry_type": None,
-                "entry": None,
-                "confidence": 0,
-                "reason": "No H4 market data",
-            }
-
-        if len(df) < MIN_REQUIRED_CANDLES:
-
-            return {
-                "valid": False,
-                "entry_type": None,
-                "entry": None,
-                "confidence": 0,
-                "reason": "Not enough H4 candles",
-            }
-
-        if level is None:
-
-            return {
-                "valid": False,
-                "entry_type": None,
-                "entry": None,
-                "confidence": 0,
-                "reason": "Level is None",
-            }
-
-        if direction not in ("BUY", "SELL"):
-
-            return {
-                "valid": False,
-                "entry_type": None,
-                "entry": None,
-                "confidence": 0,
-                "reason": "Invalid direction",
-            }
-
         level = float(level)
+        bos_index = int(bos_index)
+    except (TypeError, ValueError):
+        return _invalid("Invalid level or BOS index")
 
-        # --------------------------------------------------
-        # SEARCH MOST RECENT SEQUENCE
-        # --------------------------------------------------
+    if bos_index < 0 or bos_index >= len(df):
+        return _invalid("BOS index out of range")
 
-        candles = df.reset_index(drop=False)
+    if level_index is not None:
+        try:
+            level_index = int(level_index)
+        except (TypeError, ValueError):
+            return _invalid("Invalid Key Level index")
 
-        break_index: Optional[int] = None
+        if level_index < 0 or level_index >= len(df):
+            return _invalid("Key Level index out of range")
 
-        # Start from the oldest candle that can still leave
-        # enough candles for a retest.
-        for i in range(len(candles) - 2, -1, -1):
+    bos_candle = df.iloc[bos_index]
 
-            candle = candles.iloc[i]
+    if not _body_breaks(bos_candle, level, direction):
+        return _invalid("Supplied BOS candle does not make a full-body break")
 
-            if confirms_break(
-                candle,
-                level,
-                direction,
-            ):
+    # The retest must happen AFTER the BOS candle.
+    for index in range(bos_index + 1, len(df)):
+        candle = df.iloc[index]
 
-                break_index = i
-                break
-
-        # --------------------------------------------------
-        # NO BREAK
-        # --------------------------------------------------
-
-        if break_index is None:
-
+        if _touches(candle, level):
             return {
-                "valid": False,
-                "entry_type": None,
-                "entry": None,
-                "confidence": 0,
-                "reason": "No valid breakout",
+                "valid": True,
+                "entry_type": "BREAK_RETEST",
+                "entry": level,
+                "break_index": bos_index,
+                "retest_index": index,
+                "retest_timestamp": df.index[index],
+                "broken_level": level,
+                "stop_reference": {
+                    "type": "KEY_LEVEL_ESTABLISHING_WICK",
+                    "level_index": level_index,
+                },
+                "reason": "Post-BOS wick tap/penetration of broken level",
             }
 
-        # --------------------------------------------------
-        # SEARCH FOR RETEST AFTER BREAK
-        # --------------------------------------------------
-
-        for i in range(
-            break_index + 1,
-            len(candles),
-        ):
-
-            candle = candles.iloc[i]
-
-            # ----------------------------------------------
-            # INVALIDATION
-            # ----------------------------------------------
-
-            if retest_invalidates(
-                candle,
-                level,
-                direction,
-            ):
-
-                return {
-                    "valid": False,
-                    "entry_type": None,
-                    "entry": None,
-                    "confidence": 0,
-                    "reason": "Retest invalidated by close",
-                    "break_index": break_index,
-                    "invalidated_index": i,
-                }
-
-            # ----------------------------------------------
-            # VALID RETEST
-            # ----------------------------------------------
-
-            if confirms_retest(
-                candle,
-                level,
-                direction,
-            ):
-
-                return {
-                    "valid": True,
-                    "entry_type": "BREAK_RETEST",
-                    "entry": float(level),
-                    "confidence": 90,
-                    "reason": (
-                        "Breakout → Level Touch → "
-                        "Successful Retest"
-                    ),
-                    "break_index": break_index,
-                    "retest_index": i,
-                }
-
-        # --------------------------------------------------
-        # BREAK EXISTS BUT NO RETEST
-        # --------------------------------------------------
-
-        return {
-            "valid": False,
-            "entry_type": None,
-            "entry": None,
-            "confidence": 0,
-            "reason": "Break confirmed but no retest",
-            "break_index": break_index,
-        }
-
-    except Exception as exc:
-
-        return {
-            "valid": False,
-            "entry_type": None,
-            "entry": None,
-            "confidence": 0,
-            "reason": f"Break & Retest error: {exc}",
-        }
+    return _invalid(
+        "Required retest has not occurred — do not chase"
+    )

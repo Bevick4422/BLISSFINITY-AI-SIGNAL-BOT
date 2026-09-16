@@ -25,7 +25,6 @@ from market_data.fetcher import (
     fetch_current_price,
     fetch_ohlcv,
 )
-
 from engine.strategy_engine import evaluate_symbol
 
 from telegram.sender import (
@@ -45,7 +44,7 @@ from tracking.trade_tracker import (
 )
 
 from utils.trade_validator import validate_trade
-from reports.report_scheduler import run_report_scheduler
+
 
 # =====================================================
 # LOGGING
@@ -503,62 +502,6 @@ async def monitor_active_trades() -> None:
                 continue
 
             # -------------------------------------------------
-            # GET LATEST COMPLETED 1-MINUTE CANDLE
-            # -------------------------------------------------
-
-            candle_high = None
-            candle_low = None
-            candle_timestamp = None
-
-            try:
-                candles = fetch_ohlcv(
-                    symbol,
-                    "1m",
-                    3,
-                )
-
-                if candles is not None and not candles.empty:
-
-                    # The final row may still be forming.
-                    # Use the most recent completed candle.
-                    completed = candles.iloc[:-1]
-
-                    if not completed.empty:
-
-                        candle = completed.iloc[-1]
-
-                        candle_time = completed.index[-1]
-
-                        candle_high = float(
-                            candle["high"]
-                        )
-
-                        candle_low = float(
-                            candle["low"]
-                        )
-
-                        candle_timestamp = int(
-                            candle_time.timestamp() * 1000
-                        )
-
-                        logger.debug(
-                            "Completed 1m candle | %s | "
-                            "Time: %s | High: %s | Low: %s",
-                            symbol,
-                            candle_time,
-                            candle_high,
-                            candle_low,
-                        )
-
-            except Exception:
-                logger.exception(
-                    "1m candle fetch failed | %s | "
-                    "Trade: %s",
-                    symbol,
-                    trade_id,
-                )
-
-            # -------------------------------------------------
             # SAVE PREVIOUS STATE
             # -------------------------------------------------
 
@@ -578,9 +521,6 @@ async def monitor_active_trades() -> None:
             updated_trade = update_trade(
                 trade_id=trade_id,
                 current_price=current_price,
-                candle_high=candle_high,
-                candle_low=candle_low,
-                candle_timestamp=candle_timestamp,
             )
 
             if updated_trade is None:
@@ -860,12 +800,14 @@ async def run_scanner() -> None:
 # =====================================================
 
 async def main() -> None:
+    """
+    Application entry point.
+    """
+
     startup()
 
-    await asyncio.gather(
-        run_scanner(),
-        run_report_scheduler(),
-    )
+    await run_scanner()
+
 
 # =====================================================
 # RUN APPLICATION

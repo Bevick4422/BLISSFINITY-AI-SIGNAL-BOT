@@ -1,258 +1,265 @@
 """
-=====================================================
 BLISSFINITY SIGNAL
-Production Stop Loss Engine
-=====================================================
+Structural Stop Loss Engine
 
-Purpose:
-    Calculate structural stop-loss placement using
-    the supplied 4H market data only.
-
-Rules:
-    BUY  -> below a relevant 4H swing low
-    SELL -> above a relevant 4H swing high
-
-The engine does not use:
-    - 15-minute structure
-    - 1-hour structure
-    - Arbitrary current-candle range
-    - Generic lower-timeframe stops
-
-The existing A/V key-level definition is preserved.
-=====================================================
+Strategy source of truth:
+- No ATR stop-loss buffers.
+- No arbitrary percentage offsets.
+- Stop loss comes from the exact structural candle/wick
+  that establishes the setup invalidation point.
 """
 
 from __future__ import annotations
 
-import traceback
+import math
 from typing import Any, Dict, Optional
 
 import pandas as pd
 
 
-# Small buffer beyond the 4H structural level.
-ATR_BUFFER = 0.20
-
-# Number of candles on each side required to confirm a swing.
-SWING_LOOKBACK = 2
-
-
-def _validate_dataframe(df: pd.DataFrame) -> bool:
-    """Confirm that the supplied market data has the required columns."""
-    if df is None or df.empty:
+def _valid_number(value: Any) -> bool:
+    """Return True when value is a finite numeric value."""
+    try:
+        number = float(value)
+        return math.isfinite(number)
+    except (TypeError, ValueError):
         return False
 
-    required_columns = {"high", "low", "close"}
 
-    return required_columns.issubset(df.columns)
-
-
-def _find_4h_swing_low(
-    df: pd.DataFrame,
-    entry: float,
-) -> Optional[float]:
-    """
-    Find the most recent confirmed 4H swing low below entry.
-
-    A swing low is a candle whose low is lower than the
-    lows of the candles immediately before and after it.
-    """
-
-    if len(df) < (SWING_LOOKBACK * 2) + 1:
+def _get_row(df: pd.DataFrame, index: Any) -> Optional[pd.Series]:
+    """Safely retrieve a candle by positional index."""
+    if df is None or df.empty:
         return None
 
-    for i in range(
-        len(df) - SWING_LOOKBACK - 1,
-        SWING_LOOKBACK - 1,
-        -1,
-    ):
-        current_low = float(df.iloc[i]["low"])
-
-        left_lows = [
-            float(df.iloc[i - j]["low"])
-            for j in range(1, SWING_LOOKBACK + 1)
-        ]
-
-        right_lows = [
-            float(df.iloc[i + j]["low"])
-            for j in range(1, SWING_LOOKBACK + 1)
-        ]
-
-        is_swing_low = (
-            current_low < min(left_lows)
-            and current_low <= min(right_lows)
-        )
-
-        if is_swing_low and current_low < entry:
-            return current_low
-
-    return None
-
-
-def _find_4h_swing_high(
-    df: pd.DataFrame,
-    entry: float,
-) -> Optional[float]:
-    """
-    Find the most recent confirmed 4H swing high above entry.
-
-    A swing high is a candle whose high is higher than the
-    highs of the candles immediately before and after it.
-    """
-
-    if len(df) < (SWING_LOOKBACK * 2) + 1:
+    try:
+        position = int(index)
+    except (TypeError, ValueError):
         return None
 
-    for i in range(
-        len(df) - SWING_LOOKBACK - 1,
-        SWING_LOOKBACK - 1,
-        -1,
-    ):
-        current_high = float(df.iloc[i]["high"])
+    if position < 0 or position >= len(df):
+        return None
 
-        left_highs = [
-            float(df.iloc[i - j]["high"])
-            for j in range(1, SWING_LOOKBACK + 1)
-        ]
+    return df.iloc[position]
 
-        right_highs = [
-            float(df.iloc[i + j]["high"])
-            for j in range(1, SWING_LOOKBACK + 1)
-        ]
 
-        is_swing_high = (
-            current_high > max(left_highs)
-            and current_high >= max(right_highs)
-        )
-
-        if is_swing_high and current_high > entry:
-            return current_high
-
-    return None
+def _build_result(
+    valid: bool,
+    stop_loss: Optional[float],
+    stop_reference: Dict[str, Any],
+    reason: str,
+) -> Dict[str, Any]:
+    """Create a consistent stop-loss result."""
+    return {
+        "valid": bool(valid),
+        "stop_loss": stop_loss,
+        "stop_reference": stop_reference,
+        "reason": reason,
+    }
 
 
 def calculate_stop_loss(
     df: pd.DataFrame,
-    atr: float,
+    entry: float,
     direction: str,
-    entry_type: str = "ENGULFING",
-    entry: Optional[float] = None,
+    stop_reference: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Calculate a structural stop-loss from 4H data.
+    Calculate structural stop loss.
 
-    Parameters:
-        df:
-            The 4H dataframe supplied by the strategy engine.
+    Supported structural references:
 
-        atr:
-            ATR calculated from the same 4H timeframe.
+    DAILY_ENGULFING_WICK
+        Uses the setup candle's low for BUY
+        or high for SELL.
 
-        direction:
-            BUY or SELL.
+    H4_KEY_LEVEL_ESTABLISHING_WICK
+    KEY_LEVEL_ESTABLISHING_WICK
+        Uses the candle establishing the key level.
 
-        entry_type:
-            Existing setup type. Preserved for compatibility.
+    HL_WICK
+        Uses the referenced candle's low for BUY.
 
-        entry:
-            Trade entry price. Required for selecting the
-            correct swing relative to the entry.
+    LH_WICK
+        Uses the referenced candle's high for SELL.
 
-    Returns:
-        A dictionary containing the structural stop-loss.
+    PROTECTED_STRUCTURE_WICK
+        Uses the protected structural candle's wick.
+
+    APEX_WICK
+        Uses the Apex candle's wick.
+
+    The engine deliberately does NOT calculate an ATR buffer.
     """
 
-    try:
-        if not _validate_dataframe(df):
-            return {
-                "valid": False,
-                "stop_loss": None,
-                "reason": "Invalid 4H market data",
-            }
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return _build_result(
+            False,
+            None,
+            stop_reference or {},
+            "Stop-loss dataframe is empty.",
+        )
 
-        if direction not in {"BUY", "SELL"}:
-            return {
-                "valid": False,
-                "stop_loss": None,
-                "reason": "Direction must be BUY or SELL",
-            }
+    if not _valid_number(entry):
+        return _build_result(
+            False,
+            None,
+            stop_reference or {},
+            "Invalid entry price.",
+        )
 
-        if entry is None:
-            entry = float(df.iloc[-1]["close"])
+    if direction not in {"BUY", "SELL"}:
+        return _build_result(
+            False,
+            None,
+            stop_reference or {},
+            "Direction must be BUY or SELL.",
+        )
+
+    if not isinstance(stop_reference, dict) or not stop_reference:
+        return _build_result(
+            False,
+            None,
+            stop_reference or {},
+            "Missing structural stop reference. No fallback stop is allowed.",
+        )
+
+    reference_type = str(
+        stop_reference.get("type", "")
+    ).upper().strip()
+
+    # Determine the structural candle position.
+    index_keys = (
+        "candle_index",
+        "level_index",
+        "protected_index",
+        "apex_index",
+    )
+
+    candle_index = None
+
+    for key in index_keys:
+        if key in stop_reference:
+            candle_index = stop_reference.get(key)
+            break
+
+    if candle_index is None:
+        return _build_result(
+            False,
+            None,
+            stop_reference,
+            "Structural stop reference has no candle index.",
+        )
+
+    candle = _get_row(df, candle_index)
+
+    if candle is None:
+        return _build_result(
+            False,
+            None,
+            stop_reference,
+            "Referenced structural candle does not exist.",
+        )
+
+    high = candle.get("high")
+    low = candle.get("low")
+
+    if not _valid_number(high) or not _valid_number(low):
+        return _build_result(
+            False,
+            None,
+            stop_reference,
+            "Referenced structural candle has invalid OHLC data.",
+        )
+
+    high = float(high)
+    low = float(low)
+    entry = float(entry)
+
+    # ------------------------------------------------------------------
+    # BUY
+    # ------------------------------------------------------------------
+    if direction == "BUY":
+        if reference_type in {
+            "DAILY_ENGULFING_WICK",
+            "HL_WICK",
+            "H4_KEY_LEVEL_ESTABLISHING_WICK",
+            "KEY_LEVEL_ESTABLISHING_WICK",
+            "PROTECTED_STRUCTURE_WICK",
+            "APEX_WICK",
+            "STRUCTURAL_WICK",
+        }:
+            stop_loss = low
         else:
-            entry = float(entry)
+            return _build_result(
+                False,
+                None,
+                stop_reference,
+                f"Unsupported BUY stop reference type: {reference_type}",
+            )
 
-        atr = max(float(atr), 0.0001)
+        if not math.isfinite(stop_loss):
+            return _build_result(
+                False,
+                None,
+                stop_reference,
+                "Calculated BUY stop is not finite.",
+            )
 
-        # Explicitly use the supplied 4H dataframe.
-        h4 = df.copy()
+        if stop_loss >= entry:
+            return _build_result(
+                False,
+                stop_loss,
+                stop_reference,
+                "Invalid BUY stop: stop loss must be below entry.",
+            )
 
-        if direction == "BUY":
-            swing_level = _find_4h_swing_low(h4, entry)
+        return _build_result(
+            True,
+            stop_loss,
+            stop_reference,
+            "BUY stop taken from the specified structural wick.",
+        )
 
-            if swing_level is None:
-                return {
-                    "valid": False,
-                    "stop_loss": None,
-                    "reason": "No valid 4H swing low below BUY entry",
-                }
+    # ------------------------------------------------------------------
+    # SELL
+    # ------------------------------------------------------------------
+    if reference_type in {
+        "DAILY_ENGULFING_WICK",
+        "LH_WICK",
+        "H4_KEY_LEVEL_ESTABLISHING_WICK",
+        "KEY_LEVEL_ESTABLISHING_WICK",
+        "PROTECTED_STRUCTURE_WICK",
+        "APEX_WICK",
+        "STRUCTURAL_WICK",
+    }:
+        stop_loss = high
+    else:
+        return _build_result(
+            False,
+            None,
+            stop_reference,
+            f"Unsupported SELL stop reference type: {reference_type}",
+        )
 
-            stop_loss = swing_level - (atr * ATR_BUFFER)
+    if not math.isfinite(stop_loss):
+        return _build_result(
+            False,
+            stop_loss,
+            stop_reference,
+            "Calculated SELL stop is not finite.",
+        )
 
-            if stop_loss >= entry:
-                return {
-                    "valid": False,
-                    "stop_loss": None,
-                    "reason": "4H BUY stop is not below entry",
-                }
+    if stop_loss <= entry:
+        return _build_result(
+            False,
+            stop_loss,
+            stop_reference,
+            "Invalid SELL stop: stop loss must be above entry.",
+        )
 
-            return {
-                "valid": True,
-                "stop_loss": round(stop_loss, 8),
-                "entry_type": entry_type,
-                "structure": "4H_SWING_LOW",
-                "swing_level": round(swing_level, 8),
-                "timeframe": "4h",
-                "reason": "4H Swing Low Structural Stop",
-            }
-
-        swing_level = _find_4h_swing_high(h4, entry)
-
-        if swing_level is None:
-            return {
-                "valid": False,
-                "stop_loss": None,
-                "reason": "No valid 4H swing high above SELL entry",
-            }
-
-        stop_loss = swing_level + (atr * ATR_BUFFER)
-
-        if stop_loss <= entry:
-            return {
-                "valid": False,
-                "stop_loss": None,
-                "reason": "4H SELL stop is not above entry",
-            }
-
-        return {
-            "valid": True,
-            "stop_loss": round(stop_loss, 8),
-            "entry_type": entry_type,
-            "structure": "4H_SWING_HIGH",
-            "swing_level": round(swing_level, 8),
-            "timeframe": "4h",
-            "reason": "4H Swing High Structural Stop",
-        }
-
-    except Exception as e:
-        print("STOP LOSS ERROR:", e)
-        traceback.print_exc()
-
-        return {
-            "valid": False,
-            "stop_loss": None,
-            "reason": str(e),
-        }
-
-
-__all__ = ["calculate_stop_loss"]
+    return _build_result(
+        True,
+        stop_loss,
+        stop_reference,
+        "SELL stop taken from the specified structural wick.",
+    )

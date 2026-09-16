@@ -597,3 +597,14 @@ async def send_weekly_report(
         "Weekly Performance Report",
         report,
     )
+async def send_monthly_report(
+    report: dict[str, Any],
+) -> bool:
+    """
+    Send monthly performance report.
+    """
+
+    return await send_custom_report(
+        "Monthly Performance Report",
+        report,
+    )

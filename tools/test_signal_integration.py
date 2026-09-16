@@ -6,22 +6,19 @@ Production Signal Integration Test
 
 Tests:
 
-    Market Data
+    Controlled Market Data
         ↓
     ATR
         ↓
-    Structure Stop
+    Structural Stop
         ↓
     Risk Engine
         ↓
-    Signal Builder
+    Production Signal Builder
         ↓
     Signal Validation
 
-This test uses controlled market data that contains
-a valid BUY structure around the test entry.
-
-It does NOT modify production modules.
+This test does NOT modify production modules.
 """
 
 from __future__ import annotations
@@ -31,7 +28,7 @@ import pandas as pd
 from analysis.atr.atr_engine import calculate_atr
 from analysis.risk.stoploss_engine import calculate_stop_loss
 from engine.risk_engine import build_trade
-from engine.signal_builder import (
+from signal_engine.signal_builder import (
     build_signal,
     validate_signal,
     format_signal,
@@ -46,8 +43,8 @@ def create_market_data() -> pd.DataFrame:
     """
     Create controlled BUY market data.
 
-    The final candles trade around 100-105 while the
-    structural low remains below the intended entry.
+    The final candle is the structural candle used
+    for the stop-loss reference.
     """
 
     rows = []
@@ -143,7 +140,7 @@ def main():
         f"ATR : {atr}"
     )
 
-    if atr <= 0:
+    if atr is None or atr <= 0:
 
         print(
             "RESULT: ATR TEST FAILED"
@@ -156,37 +153,55 @@ def main():
     )
 
     # =====================================================
-    # 2. STRUCTURE STOP
+    # 2. STRUCTURAL STOP
     # =====================================================
 
     print()
     print("=" * 70)
-    print("[2] STRUCTURE STOP")
+    print("[2] STRUCTURAL STOP")
     print("=" * 70)
+
+    stop_reference = {
+        "type": "STRUCTURAL_WICK",
+        "candle_index": len(market_data) - 1,
+    }
+
+    print(
+        f"Reference Type : "
+        f"{stop_reference['type']}"
+    )
+
+    print(
+        f"Candle Index   : "
+        f"{stop_reference['candle_index']}"
+    )
 
     stop_result = calculate_stop_loss(
         df=market_data,
-        atr=atr,
+        entry=entry,
         direction=direction,
-        entry_type=entry_type,
+        stop_reference=stop_reference,
     )
 
     print(
-        f"Valid     : {stop_result.get('valid')}"
+        f"Valid     : "
+        f"{stop_result.get('valid')}"
     )
 
     print(
-        f"Stop Loss : {stop_result.get('stop_loss')}"
+        f"Stop Loss : "
+        f"{stop_result.get('stop_loss')}"
     )
 
     print(
-        f"Reason    : {stop_result.get('reason')}"
+        f"Reason    : "
+        f"{stop_result.get('reason')}"
     )
 
     if not stop_result.get("valid"):
 
         print(
-            "RESULT: STRUCTURE STOP FAILED"
+            "RESULT: STRUCTURAL STOP FAILED"
         )
 
         return
@@ -199,11 +214,8 @@ def main():
         f"Entry     : {entry}"
     )
 
-    # BUY stop must be below entry.
-
     if stop_loss >= entry:
 
-        print()
         print(
             "RESULT: INVALID BUY STOP"
         )
@@ -211,7 +223,7 @@ def main():
         return
 
     print(
-        "RESULT: STRUCTURE STOP SUCCESS"
+        "RESULT: STRUCTURAL STOP SUCCESS"
     )
 
     # =====================================================
@@ -230,10 +242,19 @@ def main():
         stop_loss=stop_loss,
     )
 
-    if trade is None:
+    if not isinstance(trade, dict):
 
         print(
             "RESULT: RISK ENGINE FAILED"
+        )
+
+        return
+
+    if not trade.get("valid", False):
+
+        print(
+            "RESULT: RISK ENGINE RETURNED "
+            "INVALID TRADE"
         )
 
         return
@@ -258,9 +279,11 @@ def main():
         f"TP2       : {trade['tp2']}"
     )
 
-    print(
-        f"TP3       : {trade['tp3']}"
-    )
+    if "tp3" in trade:
+
+        print(
+            f"TP3       : {trade['tp3']}"
+        )
 
     print(
         f"RR        : {trade['rr']}"
@@ -271,24 +294,24 @@ def main():
     )
 
     # =====================================================
-    # 4. SIGNAL BUILDER
+    # 4. PRODUCTION SIGNAL BUILDER
     # =====================================================
 
     print()
     print("=" * 70)
-    print("[4] SIGNAL BUILDER")
+    print("[4] PRODUCTION SIGNAL BUILDER")
     print("=" * 70)
 
     signal = build_signal(
         symbol="BTC/USDT:USDT",
         direction=direction,
         setup=setup,
-        candle_data=candle,
-        entry=entry,
-        entry_type=entry_type,
-        market_data=market_data,
+        entry=trade["entry"],
+        stop_loss=trade["stop_loss"],
+        tp1=trade["tp1"],
+        tp2=trade["tp2"],
         confidence=confidence,
-        stop_loss=stop_loss,
+        entry_type=entry_type,
     )
 
     if signal is None:
@@ -302,6 +325,10 @@ def main():
     print()
     print(
         format_signal(signal)
+    )
+
+    print(
+        "RESULT: PRODUCTION SIGNAL BUILDER SUCCESS"
     )
 
     # =====================================================
@@ -328,6 +355,10 @@ def main():
         )
 
         return
+
+    print(
+        "RESULT: SIGNAL VALIDATION SUCCESS"
+    )
 
     # =====================================================
     # FINAL

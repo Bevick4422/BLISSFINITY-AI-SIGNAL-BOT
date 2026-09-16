@@ -1,4 +1,4 @@
-"""
+﻿"""
 BLISSFINITY SIGNAL
 H4 BOS Historical Test
 
@@ -62,10 +62,10 @@ def print_result(
 
 
 # ==========================================================
-# TEST SYMBOL
+# RUN SYMBOL
 # ==========================================================
 
-def test_symbol(symbol: str) -> None:
+def run_symbol(symbol: str) -> None:
 
     print()
     print("#" * 70)
@@ -157,7 +157,7 @@ def main() -> None:
 
     for symbol in SYMBOLS:
 
-        test_symbol(symbol)
+        run_symbol(symbol)
 
     print()
     print("=" * 70)

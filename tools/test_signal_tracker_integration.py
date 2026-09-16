@@ -6,9 +6,7 @@ Production Signal -> Trade Tracker Integration Test
 
 Pipeline:
 
-    Market Data
-        ↓
-    Signal Builder
+    Production Signal
         ↓
     Signal Validation
         ↓
@@ -16,7 +14,15 @@ Pipeline:
         ↓
     Trade Tracker
         ↓
+    PENDING
+        ↓
+    ENTRY REACHED
+        ↓
+    OPEN
+        ↓
     TP1
+        ↓
+    STOP MOVED TO ENTRY
         ↓
     TP2
         ↓
@@ -31,192 +37,28 @@ Pipeline:
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-import pandas as pd
-
-from engine.signal_builder import (
+from signal_engine.signal_builder import (
     build_signal,
     validate_signal,
     format_signal,
 )
 
-from tracking.trade_tracker import (
-    record_signal,
-    get_trade,
-    update_trade,
-    get_performance,
-)
+from tracking import trade_tracker
 
 
-TEST_SIGNAL_ID = "INTEGRATION_TEST_001"
+# =========================================================
+# TEST CONFIGURATION
+# =========================================================
+
 TEST_SYMBOL = "TEST/BTC"
 
-
-# =========================================================
-# MARKET DATA
-# =========================================================
-
-def create_market_data() -> pd.DataFrame:
-
-    rows = []
-
-    for _ in range(39):
-
-        rows.append(
-            {
-                "open": 100.0,
-                "high": 102.0,
-                "low": 98.0,
-                "close": 100.0,
-                "volume": 1000.0,
-            }
-        )
-
-    rows.append(
-        {
-            "open": 100.0,
-            "high": 102.0,
-            "low": 98.0,
-            "close": 101.0,
-            "volume": 1000.0,
-        }
-    )
-
-    return pd.DataFrame(rows)
-
-
-# =========================================================
-# SIGNAL CANDLE
-# =========================================================
-
-def create_candle() -> dict:
-
-    return {
-        "open": 100.0,
-        "high": 102.0,
-        "low": 98.0,
-        "close": 101.0,
-    }
-
-
-# =========================================================
-# DISPLAY SIGNAL
-# =========================================================
-
-def display_signal(signal) -> None:
-
-    print()
-    print("SIGNAL")
-    print("-" * 60)
-
-    if signal is None:
-
-        print("Signal      : None")
-        return
-
-    fields = (
-        "symbol",
-        "direction",
-        "setup",
-        "entry_type",
-        "entry",
-        "stop_loss",
-        "risk",
-        "atr",
-        "tp1",
-        "tp2",
-        "tp3",
-        "rr",
-        "confidence",
-        "status",
-        "valid",
-        "created_at",
-    )
-
-    labels = {
-        "symbol": "Symbol",
-        "direction": "Direction",
-        "setup": "Setup",
-        "entry_type": "Entry Type",
-        "entry": "Entry",
-        "stop_loss": "Stop Loss",
-        "risk": "Risk",
-        "atr": "ATR",
-        "tp1": "TP1",
-        "tp2": "TP2",
-        "tp3": "TP3",
-        "rr": "RR",
-        "confidence": "Confidence",
-        "status": "Status",
-        "valid": "Valid",
-        "created_at": "Created At",
-    }
-
-    for field in fields:
-
-        print(
-            f"{labels[field]:12}: "
-            f"{signal.get(field)}"
-        )
-
-
-# =========================================================
-# DISPLAY TRADE
-# =========================================================
-
-def display_trade(trade) -> None:
-
-    print()
-    print("TRADE")
-    print("-" * 60)
-
-    if trade is None:
-
-        print("Trade      : None")
-        return
-
-    fields = (
-        "trade_id",
-        "symbol",
-        "direction",
-        "entry",
-        "stop_loss",
-        "tp1",
-        "tp2",
-        "status",
-        "tp1_hit",
-        "tp2_hit",
-        "sl_hit",
-        "last_event",
-        "result",
-        "result_percent",
-        "r_multiple",
-    )
-
-    labels = {
-        "trade_id": "Trade ID",
-        "symbol": "Symbol",
-        "direction": "Direction",
-        "entry": "Entry",
-        "stop_loss": "Stop Loss",
-        "tp1": "TP1",
-        "tp2": "TP2",
-        "status": "Status",
-        "tp1_hit": "TP1 Hit",
-        "tp2_hit": "TP2 Hit",
-        "sl_hit": "SL Hit",
-        "last_event": "Last Event",
-        "result": "Result",
-        "result_percent": "Result %",
-        "r_multiple": "R Multiple",
-    }
-
-    for field in fields:
-
-        print(
-            f"{labels[field]:14}: "
-            f"{trade.get(field)}"
-        )
+TEST_TRADE_FILE = (
+    Path(__file__).resolve().parents[1]
+    / "tracking"
+    / "test_trades.json"
+)
 
 
 # =========================================================
@@ -232,6 +74,107 @@ def fail(message: str) -> bool:
 
 
 # =========================================================
+# CREATE TEST SIGNAL
+# =========================================================
+
+def create_signal() -> dict:
+
+    return build_signal(
+        symbol=TEST_SYMBOL,
+        direction="BUY",
+        setup="V Shape",
+        entry=101.0,
+        stop_loss=98.0,
+        tp1=107.0,
+        tp2=110.0,
+        confidence=95.0,
+        entry_type="LEFT_SHOULDER",
+    )
+
+
+# =========================================================
+# DISPLAY SIGNAL
+# =========================================================
+
+def display_signal(signal: dict) -> None:
+
+    print()
+    print("SIGNAL")
+    print("-" * 60)
+
+    fields = (
+        "symbol",
+        "direction",
+        "setup",
+        "entry_type",
+        "entry",
+        "stop_loss",
+        "risk",
+        "tp1",
+        "tp2",
+        "rr",
+        "confidence",
+        "status",
+        "valid",
+    )
+
+    for field in fields:
+
+        print(
+            f"{field:12}: "
+            f"{signal.get(field)}"
+        )
+
+
+# =========================================================
+# DISPLAY TRADE
+# =========================================================
+
+def display_trade(trade: dict) -> None:
+
+    print()
+    print("TRADE")
+    print("-" * 60)
+
+    fields = (
+        "trade_id",
+        "symbol",
+        "direction",
+        "setup",
+        "entry",
+        "stop_loss",
+        "tp1",
+        "tp2",
+        "status",
+        "state",
+        "tp1_hit",
+        "break_even",
+        "result",
+        "exit_price",
+        "result_percent",
+        "r_multiple",
+    )
+
+    for field in fields:
+
+        print(
+            f"{field:16}: "
+            f"{trade.get(field)}"
+        )
+
+
+# =========================================================
+# CLEAN TEST FILE
+# =========================================================
+
+def clean_test_file() -> None:
+
+    if TEST_TRADE_FILE.exists():
+
+        TEST_TRADE_FILE.unlink()
+
+
+# =========================================================
 # MAIN
 # =========================================================
 
@@ -241,424 +184,441 @@ def main() -> bool:
     print("=" * 70)
     print(
         "BLISSFINITY SIGNAL | "
-        "SIGNAL → TRADE TRACKER INTEGRATION TEST"
+        "SIGNAL -> TRADE TRACKER INTEGRATION TEST"
     )
     print("=" * 70)
 
-    # =====================================================
-    # 1. MARKET DATA
-    # =====================================================
+    original_trade_file = trade_tracker.TRADE_FILE
 
-    print()
-    print("=" * 70)
-    print("[1] MARKET DATA")
-    print("=" * 70)
+    trade_tracker.TRADE_FILE = TEST_TRADE_FILE
 
-    market_data = create_market_data()
-    candle = create_candle()
+    clean_test_file()
 
-    latest = market_data.iloc[-1]
+    try:
 
-    print(
-        f"Market candles : {len(market_data)}"
-    )
+        # =================================================
+        # 1. PRODUCTION SIGNAL
+        # =================================================
 
-    print(
-        f"Latest open    : {latest['open']}"
-    )
+        print()
+        print("=" * 70)
+        print("[1] PRODUCTION SIGNAL")
+        print("=" * 70)
 
-    print(
-        f"Latest high    : {latest['high']}"
-    )
+        signal = create_signal()
 
-    print(
-        f"Latest low     : {latest['low']}"
-    )
-
-    print(
-        f"Latest close   : {latest['close']}"
-    )
-
-    if len(market_data) != 40:
-
-        return fail(
-            "MARKET DATA CANDLE COUNT INVALID"
-        )
-
-    if float(latest["close"]) != float(
-        candle["close"]
-    ):
-
-        return fail(
-            "MARKET DATA / CANDLE MISMATCH"
-        )
-
-    print(
-        "RESULT: MARKET DATA SUCCESS"
-    )
-
-    # =====================================================
-    # 2. SIGNAL BUILDER
-    # =====================================================
-
-    print()
-    print("=" * 70)
-    print("[2] SIGNAL BUILDER")
-    print("=" * 70)
-
-    signal = build_signal(
-
-        symbol=TEST_SYMBOL,
-
-        direction="BUY",
-
-        setup="V Shape",
-
-        candle_data=candle,
-
-        entry=101.0,
-
-        entry_type="LEFT_SHOULDER",
-
-        market_data=market_data,
-
-        confidence=95.0,
-
-    )
-
-    display_signal(signal)
-
-    if signal is None:
-
-        return fail(
-            "SIGNAL BUILDER FAILED"
-        )
-
-    if not validate_signal(signal):
-
-        return fail(
-            "SIGNAL VALIDATION FAILED"
-        )
-
-    print()
-    print(
-        "RESULT: SIGNAL BUILDER SUCCESS"
-    )
-
-    # =====================================================
-    # 3. SIGNAL FORMAT
-    # =====================================================
-
-    print()
-    print("=" * 70)
-    print("[3] SIGNAL FORMAT")
-    print("=" * 70)
-
-    formatted = format_signal(signal)
-
-    print()
-    print(formatted)
-
-    if not formatted:
-
-        return fail(
-            "SIGNAL FORMAT RETURNED EMPTY RESULT"
-        )
-
-    if formatted == "INVALID SIGNAL":
-
-        return fail(
-            "SIGNAL FORMAT FAILED"
-        )
-
-    print()
-    print(
-        "RESULT: SIGNAL FORMAT SUCCESS"
-    )
-
-    # =====================================================
-    # 4. RECORD TRADE
-    # =====================================================
-
-    print()
-    print("=" * 70)
-    print("[4] TRADE TRACKER")
-    print("=" * 70)
-
-    trade = record_signal(
-
-        symbol=signal["symbol"],
-
-        direction=signal["direction"],
-
-        setup=signal["setup"],
-
-        entry=signal["entry"],
-
-        stop_loss=signal["stop_loss"],
-
-        tp1=signal["tp1"],
-
-        tp2=signal["tp2"],
-
-        confidence=signal["confidence"],
-
-        signal_id=TEST_SIGNAL_ID,
-
-    )
-
-    display_trade(trade)
-
-    if trade is None:
-
-        return fail(
-            "TRADE RECORD FAILED"
-        )
-
-    if trade.get("status") != "OPEN":
-
-        return fail(
-            "NEW TRADE IS NOT OPEN"
-        )
-
-    trade_id = trade.get("trade_id")
-
-    if not trade_id:
-
-        return fail(
-            "TRADE ID WAS NOT CREATED"
-        )
-
-    print()
-    print(
-        "RESULT: TRADE RECORDED SUCCESSFULLY"
-    )
-
-    # =====================================================
-    # 5. TP1
-    # =====================================================
-
-    print()
-    print("=" * 70)
-    print("[5] TP1 TEST")
-    print("=" * 70)
-
-    trade = update_trade(
-
-        trade_id,
-
-        float(signal["tp1"]),
-
-    )
-
-    display_trade(trade)
-
-    if trade is None:
-
-        return fail(
-            "TP1 UPDATE FAILED"
-        )
-
-    if not trade.get("tp1_hit"):
-
-        return fail(
-            "TP1 WAS NOT REGISTERED"
-        )
-
-    if trade.get("status") != "OPEN":
-
-        return fail(
-            "TRADE CLOSED PREMATURELY AT TP1"
-        )
-
-    print()
-    print(
-        "RESULT: TP1 HIT SUCCESSFULLY"
-    )
-
-    # =====================================================
-    # 6. TP2
-    # =====================================================
-
-    print()
-    print("=" * 70)
-    print("[6] TP2 TEST")
-    print("=" * 70)
-
-    trade = update_trade(
-
-        trade_id,
-
-        float(signal["tp2"]),
-
-    )
-
-    display_trade(trade)
-
-    if trade is None:
-
-        return fail(
-            "TP2 UPDATE FAILED"
-        )
-
-    if not trade.get("tp2_hit"):
-
-        return fail(
-            "TP2 WAS NOT REGISTERED"
-        )
-
-    if trade.get("status") != "CLOSED":
-
-        return fail(
-            "TRADE DID NOT CLOSE AT TP2"
-        )
-
-    if trade.get("result") != "WIN":
-
-        return fail(
-            "TRADE WAS NOT MARKED WIN"
-        )
-
-    print()
-    print(
-        "RESULT: TP2 HIT — TRADE CLOSED WIN"
-    )
-
-    # =====================================================
-    # 7. PERSISTENCE
-    # =====================================================
-
-    print()
-    print("=" * 70)
-    print("[7] TRADE PERSISTENCE")
-    print("=" * 70)
-
-    saved_trade = get_trade(
-        trade_id
-    )
-
-    display_trade(
-        saved_trade
-    )
-
-    if saved_trade is None:
-
-        return fail(
-            "TRADE PERSISTENCE FAILED"
-        )
-
-    if saved_trade.get("status") != "CLOSED":
-
-        return fail(
-            "SAVED TRADE STATUS INVALID"
-        )
-
-    if saved_trade.get("result") != "WIN":
-
-        return fail(
-            "SAVED TRADE RESULT INVALID"
-        )
-
-    if not saved_trade.get("tp1_hit"):
-
-        return fail(
-            "SAVED TP1 STATE INVALID"
-        )
-
-    if not saved_trade.get("tp2_hit"):
-
-        return fail(
-            "SAVED TP2 STATE INVALID"
-        )
-
-    print()
-    print(
-        "RESULT: TRADE PERSISTENCE SUCCESS"
-    )
-
-    # =====================================================
-    # 8. PERFORMANCE
-    # =====================================================
-
-    print()
-    print("=" * 70)
-    print("[8] PERFORMANCE")
-    print("=" * 70)
-
-    performance = get_performance()
-
-    required_metrics = (
-        "total_trades",
-        "open_trades",
-        "closed_trades",
-        "wins",
-        "losses",
-        "win_rate",
-        "total_percent",
-        "total_r",
-    )
-
-    for metric in required_metrics:
-
-        if metric not in performance:
+        if not signal:
 
             return fail(
-                f"PERFORMANCE METRIC MISSING: {metric}"
+                "PRODUCTION SIGNAL CREATION FAILED"
             )
 
-    print(
-        f"Total Trades : "
-        f"{performance['total_trades']}"
-    )
+        display_signal(signal)
 
-    print(
-        f"Open Trades  : "
-        f"{performance['open_trades']}"
-    )
+        if not validate_signal(signal):
 
-    print(
-        f"Closed Trades: "
-        f"{performance['closed_trades']}"
-    )
+            return fail(
+                "SIGNAL VALIDATION FAILED"
+            )
 
-    print(
-        f"Wins         : "
-        f"{performance['wins']}"
-    )
+        print()
+        print(
+            "RESULT: PRODUCTION SIGNAL SUCCESS"
+        )
 
-    print(
-        f"Losses       : "
-        f"{performance['losses']}"
-    )
+        # =================================================
+        # 2. SIGNAL FORMAT
+        # =================================================
 
-    print(
-        f"Win Rate     : "
-        f"{performance['win_rate']:.2f}%"
-    )
+        print()
+        print("=" * 70)
+        print("[2] SIGNAL FORMAT")
+        print("=" * 70)
 
-    print(
-        f"Total %      : "
-        f"{performance['total_percent']:.2f}%"
-    )
+        formatted = format_signal(signal)
 
-    print(
-        f"Total R      : "
-        f"{performance['total_r']:.2f}R"
-    )
+        print()
+        print(formatted)
 
-    # =====================================================
-    # COMPLETE
-    # =====================================================
+        if not formatted:
 
-    print()
-    print("=" * 70)
-    print(
-        "ALL SIGNAL → TRADE TRACKER "
-        "INTEGRATION TESTS PASSED"
-    )
-    print("=" * 70)
+            return fail(
+                "SIGNAL FORMAT RETURNED EMPTY RESULT"
+            )
 
-    return True
+        if formatted == "INVALID SIGNAL":
+
+            return fail(
+                "SIGNAL FORMAT FAILED"
+            )
+
+        print()
+        print(
+            "RESULT: SIGNAL FORMAT SUCCESS"
+        )
+
+        # =================================================
+        # 3. RECORD SIGNAL
+        # =================================================
+
+        print()
+        print("=" * 70)
+        print("[3] RECORD SIGNAL")
+        print("=" * 70)
+
+        trade_id = trade_tracker.record_signal(
+            signal
+        )
+
+        print(
+            f"Trade ID: {trade_id}"
+        )
+
+        if not trade_id:
+
+            return fail(
+                "TRADE RECORD FAILED"
+            )
+
+        trades = trade_tracker.get_all_trades()
+
+        if len(trades) != 1:
+
+            return fail(
+                "EXPECTED EXACTLY ONE TRADE"
+            )
+
+        trade = trades[0]
+
+        display_trade(trade)
+
+        if trade.get("status") != "PENDING":
+
+            return fail(
+                "NEW TRADE IS NOT PENDING"
+            )
+
+        if trade.get("state") != "PENDING":
+
+            return fail(
+                "NEW TRADE STATE IS NOT PENDING"
+            )
+
+        print()
+        print(
+            "RESULT: SIGNAL RECORDED AS PENDING"
+        )
+
+        # =================================================
+        # 4. ENTRY REACHED
+        # =================================================
+
+        print()
+        print("=" * 70)
+        print("[4] ENTRY REACHED")
+        print("=" * 70)
+
+        trade = trade_tracker.update_trade(
+            trade_id,
+            current_price=101.0,
+            candle_high=102.0,
+            candle_low=100.0,
+            candle_timestamp=1,
+        )
+
+        if trade is None:
+
+            return fail(
+                "ENTRY UPDATE FAILED"
+            )
+
+        display_trade(trade)
+
+        if trade.get("status") != "OPEN":
+
+            return fail(
+                "TRADE DID NOT MOVE TO OPEN"
+            )
+
+        if trade.get("state") != "OPEN":
+
+            return fail(
+                "TRADE STATE DID NOT MOVE TO OPEN"
+            )
+
+        print()
+        print(
+            "RESULT: ENTRY REACHED - TRADE OPEN"
+        )
+
+        # =================================================
+        # 5. TP1
+        # =================================================
+
+        print()
+        print("=" * 70)
+        print("[5] TP1")
+        print("=" * 70)
+
+        trade = trade_tracker.update_trade(
+            trade_id,
+            current_price=107.0,
+            candle_high=108.0,
+            candle_low=106.0,
+            candle_timestamp=2,
+        )
+
+        if trade is None:
+
+            return fail(
+                "TP1 UPDATE FAILED"
+            )
+
+        display_trade(trade)
+
+        if not trade.get("tp1_hit"):
+
+            return fail(
+                "TP1 WAS NOT REGISTERED"
+            )
+
+        if not trade.get("break_even"):
+
+            return fail(
+                "BREAK-EVEN WAS NOT ENABLED"
+            )
+
+        if float(trade.get("stop_loss")) != float(
+            trade.get("entry")
+        ):
+
+            return fail(
+                "STOP LOSS WAS NOT MOVED TO ENTRY"
+            )
+
+        if trade.get("status") != "OPEN":
+
+            return fail(
+                "TRADE CLOSED PREMATURELY AT TP1"
+            )
+
+        print()
+        print(
+            "RESULT: TP1 HIT - STOP MOVED TO ENTRY"
+        )
+
+        # =================================================
+        # 6. TP2
+        # =================================================
+
+        print()
+        print("=" * 70)
+        print("[6] TP2")
+        print("=" * 70)
+
+        trade = trade_tracker.update_trade(
+            trade_id,
+            current_price=110.0,
+            candle_high=111.0,
+            candle_low=109.0,
+            candle_timestamp=3,
+        )
+
+        if trade is None:
+
+            return fail(
+                "TP2 UPDATE FAILED"
+            )
+
+        display_trade(trade)
+
+        if trade.get("status") != "WIN":
+
+            return fail(
+                "TP2 DID NOT CLOSE TRADE AS WIN"
+            )
+
+        if trade.get("result") != "WIN":
+
+            return fail(
+                "TP2 RESULT IS NOT WIN"
+            )
+
+        if float(trade.get("exit_price")) != float(
+            signal["tp2"]
+        ):
+
+            return fail(
+                "EXIT PRICE DOES NOT MATCH TP2"
+            )
+
+        print()
+        print(
+            "RESULT: TP2 HIT - TRADE CLOSED WIN"
+        )
+
+        # =================================================
+        # 7. PERSISTENCE
+        # =================================================
+
+        print()
+        print("=" * 70)
+        print("[7] TRADE PERSISTENCE")
+        print("=" * 70)
+
+        saved_trades = trade_tracker.get_all_trades()
+
+        if len(saved_trades) != 1:
+
+            return fail(
+                "PERSISTENCE TRADE COUNT INVALID"
+            )
+
+        saved_trade = saved_trades[0]
+
+        display_trade(saved_trade)
+
+        if saved_trade.get("trade_id") != trade_id:
+
+            return fail(
+                "PERSISTED TRADE ID INVALID"
+            )
+
+        if saved_trade.get("status") != "WIN":
+
+            return fail(
+                "PERSISTED TRADE STATUS INVALID"
+            )
+
+        if saved_trade.get("result") != "WIN":
+
+            return fail(
+                "PERSISTED TRADE RESULT INVALID"
+            )
+
+        if not saved_trade.get("tp1_hit"):
+
+            return fail(
+                "PERSISTED TP1 STATE INVALID"
+            )
+
+        if float(saved_trade.get("exit_price")) != float(
+            signal["tp2"]
+        ):
+
+            return fail(
+                "PERSISTED EXIT PRICE DOES NOT MATCH TP2"
+            )
+
+        print()
+        print(
+            "RESULT: TRADE PERSISTENCE SUCCESS"
+        )
+
+        # =================================================
+        # 8. PERFORMANCE
+        # =================================================
+
+        print()
+        print("=" * 70)
+        print("[8] PERFORMANCE")
+        print("=" * 70)
+
+        performance = trade_tracker.get_performance()
+
+        print(
+            f"Total Trades : "
+            f"{performance['total_trades']}"
+        )
+
+        print(
+            f"Pending      : "
+            f"{performance['pending_trades']}"
+        )
+
+        print(
+            f"Open Trades  : "
+            f"{performance['open_trades']}"
+        )
+
+        print(
+            f"Closed Trades: "
+            f"{performance['closed_trades']}"
+        )
+
+        print(
+            f"Wins         : "
+            f"{performance['wins']}"
+        )
+
+        print(
+            f"Losses       : "
+            f"{performance['losses']}"
+        )
+
+        print(
+            f"Breakevens   : "
+            f"{performance['breakevens']}"
+        )
+
+        print(
+            f"Win Rate     : "
+            f"{performance['win_rate']:.2f}%"
+        )
+
+        print(
+            f"Net R        : "
+            f"{performance['net_r']:.2f}R"
+        )
+
+        if performance["total_trades"] != 1:
+
+            return fail(
+                "PERFORMANCE TOTAL TRADES INVALID"
+            )
+
+        if performance["closed_trades"] != 1:
+
+            return fail(
+                "PERFORMANCE CLOSED TRADES INVALID"
+            )
+
+        if performance["wins"] != 1:
+
+            return fail(
+                "PERFORMANCE WIN COUNT INVALID"
+            )
+
+        if performance["losses"] != 0:
+
+            return fail(
+                "PERFORMANCE LOSS COUNT INVALID"
+            )
+
+        print()
+        print(
+            "RESULT: PERFORMANCE SUCCESS"
+        )
+
+        # =================================================
+        # COMPLETE
+        # =================================================
+
+        print()
+        print("=" * 70)
+        print(
+            "ALL SIGNAL -> TRADE TRACKER "
+            "INTEGRATION TESTS PASSED"
+        )
+        print("=" * 70)
+
+        return True
+
+    finally:
+
+        trade_tracker.TRADE_FILE = original_trade_file
+
+        clean_test_file()
 
 
 # =========================================================

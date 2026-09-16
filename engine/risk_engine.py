@@ -1,154 +1,108 @@
-
 """
-=====================================================
-BLISSFINITY SIGNAL 
-Production Risk Engine v7
-=====================================================
+BLISSFINITY SIGNAL
+Risk Engine — Strategy-Aligned
+
+Locked target model:
+    TP1 = 2R
+    TP2 = 3R
+
+This layer receives the already-selected entry and structural Stop Loss.
+It does not discover structure and does not replace the supplied Stop Loss.
 """
 
 from __future__ import annotations
 
-import traceback
 from typing import Any, Dict, Optional
 
-# =====================================================
-# DEFAULT RISK : REWARD
-# =====================================================
 
 DEFAULT_TP1_RR = 2.0
 DEFAULT_TP2_RR = 3.0
 
 
+def _invalid(reason: str) -> Dict[str, Any]:
+    return {
+        "valid": False,
+        "entry": None,
+        "stop_loss": None,
+        "risk": None,
+        "tp1": None,
+        "tp2": None,
+        "rr": None,
+        "reason": reason,
+    }
 
-# =====================================================
-# BUILD TRADE
-# =====================================================
 
 def build_trade(
+    entry: float,
+    stop_loss: float,
     direction: str,
-    candle,
-    stop_loss: Optional[float] = None,
-    entry: Optional[float] = None,
-) -> Optional[Dict[str, Any]]:
+    tp1_rr: float = DEFAULT_TP1_RR,
+    tp2_rr: float = DEFAULT_TP2_RR,
+    **kwargs: Any,
+) -> Dict[str, Any]:
     """
-    Build a complete trade.
+    Build the trade from an explicit structural entry and Stop Loss.
 
-    Parameters
-    ----------
-    direction : str
-        BUY or SELL
-
-    candle :
-        OHLC candle
-
-    stop_loss : float | None
-        Structure stop supplied by Stop Loss Engine.
-
-    entry : float | None
-        Custom entry price.
-
-    Returns
-    -------
-    dict | None
+    The supplied stop_loss is authoritative. No fallback stop is generated.
     """
+    if direction not in ("BUY", "SELL"):
+        return _invalid("Invalid trade direction")
 
     try:
-
-        close = float(candle["close"])
-        high = float(candle["high"])
-        low = float(candle["low"])
-
-        if entry is None:
-            entry = close
-
         entry = float(entry)
-
-        # ---------------------------------------------
-        # DEFAULT STOP LOSS
-        # ---------------------------------------------
-
-        if stop_loss is None:
-
-            candle_range = high - low
-
-            if candle_range <= 0:
-                return None
-
-            if direction == "BUY":
-
-                stop_loss = entry - candle_range
-
-            elif direction == "SELL":
-
-                stop_loss = entry + candle_range
-
-            else:
-
-                return None
-
         stop_loss = float(stop_loss)
+        tp1_rr = float(tp1_rr)
+        tp2_rr = float(tp2_rr)
+    except (TypeError, ValueError):
+        return _invalid("Invalid numeric trade value")
 
-        # ---------------------------------------------
-        # TRUE RISK
-        # ---------------------------------------------
+    if entry <= 0 or stop_loss <= 0:
+        return _invalid("Entry and Stop Loss must be positive")
 
-        risk = abs(entry - stop_loss)
+    if tp1_rr <= 0 or tp2_rr <= 0:
+        return _invalid("Risk/reward values must be positive")
 
-        if risk <= 0:
-            return None
+    if tp2_rr <= tp1_rr:
+        return _invalid("TP2 R must be greater than TP1 R")
 
-        # ---------------------------------------------
-        # TAKE PROFITS
-        # ---------------------------------------------
+    if direction == "BUY":
+        if stop_loss >= entry:
+            return _invalid("BUY Stop Loss must be below entry")
 
-        if direction == "BUY":
+        risk = entry - stop_loss
+        tp1 = entry + (risk * tp1_rr)
+        tp2 = entry + (risk * tp2_rr)
 
-            tp1 = entry + risk * DEFAULT_TP1_RR
-            tp2 = entry + risk * DEFAULT_TP2_RR
-          
+    else:
+        if stop_loss <= entry:
+            return _invalid("SELL Stop Loss must be above entry")
 
-        elif direction == "SELL":
+        risk = stop_loss - entry
+        tp1 = entry - (risk * tp1_rr)
+        tp2 = entry - (risk * tp2_rr)
 
-            tp1 = entry - risk * DEFAULT_TP1_RR
-            tp2 = entry - risk * DEFAULT_TP2_RR
-           
+    if risk <= 0:
+        return _invalid("Invalid non-positive trade risk")
 
-        else:
+    return {
+        "valid": True,
+        "entry": entry,
+        "stop_loss": stop_loss,
+        "risk": risk,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp1_rr": tp1_rr,
+        "tp2_rr": tp2_rr,
+        # TP2 is the final target, therefore final trade RR = 3R
+        # under the locked defaults.
+        "rr": tp2_rr,
+        "reason": "Risk built from structural Stop Loss",
+        **kwargs,
+    }
 
-            return None
 
-        # ---------------------------------------------
-        # BUILD TRADE
-        # ---------------------------------------------
-
-        trade = {
-
-            "entry": round(entry, 4),
-
-            "stop_loss": round(stop_loss, 4),
-            "sl": round(stop_loss, 4),
-
-            "risk": round(risk, 4),
-
-            "tp1": round(tp1, 4),
-            "tp2": round(tp2, 4),
-          
-
-            "rr": DEFAULT_TP1_RR,
-
-            "valid": True,
-
-        }
-
-        return trade
-
-    except Exception as e:
-
-        print("\n" + "=" * 60)
-        print("RISK ENGINE ERROR")
-        print("=" * 60)
-        print(f"Error : {e}")
-        traceback.print_exc()
-        print("=" * 60)
-
-        return None
+__all__ = [
+    "DEFAULT_TP1_RR",
+    "DEFAULT_TP2_RR",
+    "build_trade",
+]
