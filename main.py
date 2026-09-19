@@ -1,4 +1,4 @@
-"""
+﻿"""
 =====================================================
 BLISSFINITY SIGNAL
 Production Main
@@ -11,6 +11,10 @@ import asyncio
 import logging
 import traceback
 from datetime import UTC, datetime
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from config.settings import (
     SYMBOLS,
@@ -40,8 +44,10 @@ from telegram.sender import (
 from tracking.trade_tracker import (
     record_signal,
     get_active_trades,
+    get_all_trades,
     update_trade,
     get_performance,
+    mark_notification_sent,
 )
 
 from utils.trade_validator import validate_trade
@@ -424,6 +430,14 @@ async def scan_market() -> None:
     is reached.
     """
 
+    # No new signals on Sunday (UTC).
+    if datetime.now(UTC).weekday() == 6:
+        logger.info(
+            "SUNDAY SIGNAL PAUSE | "
+            "No new signals will be generated or sent."
+        )
+        return
+
     reset_daily_counter()
 
     if daily_limit_reached():
@@ -614,9 +628,15 @@ async def monitor_active_trades() -> None:
                 previous_status == "PENDING"
                 and new_status == "OPEN"
             ):
-                sent = await send_entry_hit(
-                    updated_trade
-                )
+                sent = await send_entry_hit(updated_trade)
+                if sent:
+                    marked = mark_notification_sent(str(trade_id), "entry_notified")
+                    if not marked:
+                        logger.error(
+                            "Alert sent but notification flag could not be saved | Trade: %s | Event: %s",
+                            trade_id,
+                            "entry_notified",
+                        )
 
                 logger.info(
                     "ENTRY HIT | %s | Price: %s | "
@@ -634,9 +654,15 @@ async def monitor_active_trades() -> None:
                 not previous_tp1_hit
                 and new_tp1_hit
             ):
-                sent = await send_tp1_hit(
-                    updated_trade
-                )
+                sent = await send_tp1_hit(updated_trade)
+                if sent:
+                    marked = mark_notification_sent(str(trade_id), "tp1_notified")
+                    if not marked:
+                        logger.error(
+                            "Alert sent but notification flag could not be saved | Trade: %s | Event: %s",
+                            trade_id,
+                            "tp1_notified",
+                        )
 
                 logger.info(
                     "TP1 HIT | %s | Price: %s | "
@@ -675,9 +701,15 @@ async def monitor_active_trades() -> None:
 
                 if new_status == "WIN":
 
-                    sent = await send_tp2_hit(
-                        updated_trade
-                    )
+                    sent = await send_tp2_hit(updated_trade)
+                    if sent:
+                        marked = mark_notification_sent(str(trade_id), "tp2_notified")
+                        if not marked:
+                            logger.error(
+                                "Alert sent but notification flag could not be saved | Trade: %s | Event: %s",
+                                trade_id,
+                                "tp2_notified",
+                            )
 
                     logger.info(
                         "TP2 HIT | %s | Price: %s | "
@@ -693,9 +725,15 @@ async def monitor_active_trades() -> None:
 
                 elif new_status == "LOSS":
 
-                    sent = await send_stop_loss(
-                        updated_trade
-                    )
+                    sent = await send_stop_loss(updated_trade)
+                    if sent:
+                        marked = mark_notification_sent(str(trade_id), "stop_loss_notified")
+                        if not marked:
+                            logger.error(
+                                "Alert sent but notification flag could not be saved | Trade: %s | Event: %s",
+                                trade_id,
+                                "stop_loss_notified",
+                            )
 
                     logger.info(
                         "STOP LOSS HIT | %s | Price: %s | "
@@ -711,9 +749,15 @@ async def monitor_active_trades() -> None:
 
                 elif new_status == "BREAKEVEN":
 
-                    sent = await send_breakeven(
-                        updated_trade
-                    )
+                    sent = await send_breakeven(updated_trade)
+                    if sent:
+                        marked = mark_notification_sent(str(trade_id), "breakeven_notified")
+                        if not marked:
+                            logger.error(
+                                "Alert sent but notification flag could not be saved | Trade: %s | Event: %s",
+                                trade_id,
+                                "breakeven_notified",
+                            )
 
                     logger.info(
                         "BREAKEVEN CLOSED | %s | Price: %s | "
@@ -776,6 +820,90 @@ async def monitor_active_trades() -> None:
 # PERFORMANCE LOGGING
 # =====================================================
 
+
+# =====================================================
+# RETRY UNSENT TRADE EVENT NOTIFICATIONS
+# =====================================================
+
+async def retry_pending_notifications() -> None:
+    """
+    Retry persisted trade-event alerts that were not delivered.
+    Successful delivery is recorded only after sender success.
+    """
+
+    terminal_statuses = {"WIN", "LOSS", "BREAKEVEN"}
+
+    senders = (
+        ("entry_notified", send_entry_hit),
+        ("tp1_notified", send_tp1_hit),
+    )
+
+    for trade in get_all_trades():
+        trade_id = trade.get("trade_id")
+        status = trade.get("status")
+
+        if not trade_id:
+            continue
+
+        # PENDING trades have not reached entry.
+        if status == "PENDING":
+            continue
+
+        try:
+            # Entry alert comes before any later trade event.
+            pending = []
+            if not trade.get("entry_notified", False):
+                pending.append(("entry_notified", send_entry_hit))
+
+            if trade.get("tp1_hit", False) and not trade.get("tp1_notified", False):
+                pending.append(("tp1_notified", send_tp1_hit))
+
+            if status == "WIN" and not trade.get("tp2_notified", False):
+                pending.append(("tp2_notified", send_tp2_hit))
+            elif status == "LOSS" and not trade.get("stop_loss_notified", False):
+                pending.append(("stop_loss_notified", send_stop_loss))
+            elif status == "BREAKEVEN" and not trade.get("breakeven_notified", False):
+                pending.append(("breakeven_notified", send_breakeven))
+
+            for notification_key, sender in pending:
+                sent = await sender(trade)
+
+                if not sent:
+                    logger.warning(
+                        "Notification retry failed | Trade: %s | Event: %s",
+                        trade_id,
+                        notification_key,
+                    )
+                    # Preserve event order; retry later.
+                    break
+
+                marked = mark_notification_sent(
+                    str(trade_id),
+                    notification_key,
+                )
+
+                if not marked:
+                    logger.error(
+                        "Alert sent but notification flag could not be saved | "
+                        "Trade: %s | Event: %s",
+                        trade_id,
+                        notification_key,
+                    )
+                    # A later retry may duplicate this alert if persistence failed.
+                    break
+
+                logger.info(
+                    "Notification delivered and recorded | Trade: %s | Event: %s",
+                    trade_id,
+                    notification_key,
+                )
+
+        except Exception:
+            logger.exception(
+                "Notification retry handler failed | Trade: %s",
+                trade_id,
+            )
+
 def log_performance() -> None:
     """
     Log current trade performance.
@@ -832,6 +960,7 @@ async def run_scanner() -> None:
             # -------------------------------------------------
 
             await monitor_active_trades()
+            await retry_pending_notifications()
 
             # -------------------------------------------------
             # SCAN FOR NEW OPPORTUNITIES

@@ -746,3 +746,42 @@ def claim_notification(trade_id, notification_key):
         return True
 
     return False
+
+
+def mark_notification_sent(
+    trade_id: str,
+    notification_key: str,
+) -> bool:
+    """Persist successful notification delivery; return False on save errors."""
+    allowed_keys = {
+        "entry_notified",
+        "tp1_notified",
+        "tp2_notified",
+        "stop_loss_notified",
+        "breakeven_notified",
+    }
+
+    if notification_key not in allowed_keys:
+        raise ValueError(
+            f"Invalid notification key: {notification_key}"
+        )
+
+    trades = _load_trades()
+
+    for trade in trades:
+        if str(trade.get("trade_id")) == str(trade_id):
+            trade[notification_key] = True
+
+            try:
+                _save_trades(trades)
+            except (OSError, TypeError, ValueError):
+                print(
+                    "WARNING: Failed to persist notification flag | "
+                    f"Trade: {trade_id} | Event: {notification_key}"
+                )
+                return False
+
+            return True
+
+    return False
+

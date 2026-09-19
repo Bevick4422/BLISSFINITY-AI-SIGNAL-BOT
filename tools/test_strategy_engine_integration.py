@@ -692,3 +692,225 @@ def test_invalid_structural_stop_no_signal(monkeypatch):
     )
 
     assert result is None
+
+
+# ============================================================
+# DAILY REJECTION INTEGRATION HANDOFF TESTS
+# ============================================================
+
+def test_daily_rejection_ambiguous_handoff_no_signal(monkeypatch):
+    """
+    Ambiguous Daily rejection must not become a trade signal.
+    """
+
+    daily = ranging_daily()
+
+    monkeypatch.setattr(
+        se,
+        "detect_daily_setup",
+        lambda *args, **kwargs: {
+            "valid": True,
+            "trend": "BULLISH",
+            "setup": None,
+            "direction": None,
+            "level": None,
+            "level_index": None,
+            "setup_candle_index": len(daily) - 1,
+            "entry": None,
+            "retest_required": True,
+            "entry_mode": "H4_PATHWAY",
+            "reason": "DAILY_REJECTION_AMBIGUOUS_LEVELS_NO_SIGNAL",
+        },
+    )
+
+    result = se.evaluate_symbol(
+        "TEST/USDT",
+        valid_market(daily),
+    )
+
+    assert result is None
+
+
+def test_daily_rejection_requires_bos_and_retest(monkeypatch):
+    """
+    Clear Daily rejection must require matching H4 BOS
+    and a valid retest before producing a signal.
+    """
+
+    daily = ranging_daily()
+
+    monkeypatch.setattr(
+        se,
+        "detect_daily_setup",
+        lambda *args, **kwargs: {
+            "valid": True,
+            "trend": "BULLISH",
+            "setup": "V_SHAPE",
+            "direction": "BUY",
+            "level": 99.0,
+            "level_index": 5,
+            "setup_candle_index": len(daily) - 1,
+            "entry": None,
+            "retest_required": True,
+            "entry_mode": "H4_PATHWAY",
+            "reason": (
+                "DAILY_REJECTION_REQUIRES_MATCHING_H4_BOS_AND_RETEST"
+            ),
+            "rejected_levels": [
+                {"kind": "LOW", "index": 5, "price": 99.0}
+            ],
+        },
+    )
+
+    # No BOS -> no signal.
+    patch_pipeline(
+        monkeypatch,
+        bos_result={
+            "bos": False,
+            "direction": "BUY",
+            "reason": "controlled missing BOS",
+        },
+    )
+
+    result = se.evaluate_symbol(
+        "TEST/USDT",
+        valid_market(daily),
+    )
+
+    assert result is None
+
+    # Matching BOS, but no valid retest -> no signal.
+    patch_pipeline(
+        monkeypatch,
+        bos_result=valid_bos("BUY"),
+        retest_result={
+            "valid": False,
+            "reason": "controlled missing retest",
+        },
+    )
+
+    result = se.evaluate_symbol(
+        "TEST/USDT",
+        valid_market(daily),
+    )
+
+    assert result is None
+
+    # Matching BOS + valid retest + valid stop -> signal.
+    patch_pipeline(
+        monkeypatch,
+        bos_result=valid_bos("BUY"),
+        retest_result=valid_retest(),
+        stop_result=valid_stop(),
+    )
+
+    result = se.evaluate_symbol(
+        "TEST/USDT",
+        valid_market(daily),
+    )
+
+    assert result is not None
+    assert result["direction"] == "BUY"
+    assert result["setup"] == "V_SHAPE"
+    assert result["entry_type"] == "BREAK_RETEST"
+
+# ============================================================
+# APPROVED RANGE STRUCTURAL SETUP REGRESSION TESTS
+# ============================================================
+
+def range_structural_stub(direction="BUY", setup="V_SHAPE"):
+    result = structural_daily_stub(direction=direction, setup=setup)
+    result["trend"] = "RANGE"
+    return result
+
+
+def test_range_structural_valid_bos_retest_and_stop_allows_signal(monkeypatch):
+    daily = ranging_daily()
+
+    monkeypatch.setattr(
+        se,
+        "detect_daily_setup",
+        lambda *args, **kwargs: range_structural_stub("BUY", "V_SHAPE"),
+    )
+
+    patch_pipeline(
+        monkeypatch,
+        bos_result=valid_bos("BUY"),
+        retest_result=valid_retest(),
+        stop_result=valid_stop(),
+    )
+
+    result = se.evaluate_symbol("TEST/USDT", valid_market(daily))
+
+    assert result is not None
+    assert result["direction"] == "BUY"
+    assert result["setup"] == "V_SHAPE"
+    assert result["entry_type"] == "BREAK_RETEST"
+
+
+def test_range_structural_without_bos_no_signal(monkeypatch):
+    daily = ranging_daily()
+
+    monkeypatch.setattr(
+        se,
+        "detect_daily_setup",
+        lambda *args, **kwargs: range_structural_stub("BUY", "V_SHAPE"),
+    )
+
+    patch_pipeline(
+        monkeypatch,
+        bos_result={
+            "bos": False,
+            "direction": None,
+            "reason": "No valid H4 BOS",
+        },
+    )
+
+    result = se.evaluate_symbol("TEST/USDT", valid_market(daily))
+
+    assert result is None
+
+
+def test_range_structural_wrong_bos_direction_no_signal(monkeypatch):
+    daily = ranging_daily()
+
+    monkeypatch.setattr(
+        se,
+        "detect_daily_setup",
+        lambda *args, **kwargs: range_structural_stub("BUY", "V_SHAPE"),
+    )
+
+    patch_pipeline(
+        monkeypatch,
+        bos_result=valid_bos("SELL"),
+    )
+
+    result = se.evaluate_symbol("TEST/USDT", valid_market(daily))
+
+    assert result is None
+
+
+def test_range_structural_without_valid_retest_no_signal(monkeypatch):
+    daily = ranging_daily()
+
+    monkeypatch.setattr(
+        se,
+        "detect_daily_setup",
+        lambda *args, **kwargs: range_structural_stub("BUY", "V_SHAPE"),
+    )
+
+    patch_pipeline(
+        monkeypatch,
+        bos_result=valid_bos("BUY"),
+        retest_result={
+            "valid": False,
+            "entry": None,
+            "retest_index": None,
+            "confidence": 0.0,
+            "reason": "No valid retest",
+        },
+    )
+
+    result = se.evaluate_symbol("TEST/USDT", valid_market(daily))
+
+    assert result is None

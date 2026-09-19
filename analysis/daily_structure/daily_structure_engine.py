@@ -796,7 +796,77 @@ def detect_daily_structure(
     }
 
 
-# ============================================================
+
+
+def _find_daily_rejection(
+    df: pd.DataFrame,
+) -> Optional[Dict[str, Any]]:
+    """Detect Daily rejection at confirmed Daily structural swing levels.
+
+    SELL: latest candle reaches a prior confirmed swing high and closes below.
+    BUY: latest candle reaches a prior confirmed swing low and closes above.
+
+    Multiple distinct qualifying levels or mixed directions are ambiguous.
+    """
+    if df is None or len(df) < 3:
+        return None
+
+    swings = _classify_swings(df)
+    candle = df.iloc[-1]
+
+    high = float(candle["high"])
+    low = float(candle["low"])
+    close = float(candle["close"])
+
+    candidates = []
+
+    for swing in swings:
+        kind = swing.get("kind")
+        level = float(swing["price"])
+        level_index = int(swing["index"])
+
+        # A rejection level must be confirmed before the latest candle.
+        if level_index >= len(df) - 1:
+            continue
+
+        if kind == "HIGH" and high >= level and close < level:
+            candidates.append({
+                "formation_type": "A_SHAPE",
+                "direction": "SELL",
+                "level": level,
+                "level_index": level_index,
+            })
+
+        elif kind == "LOW" and low <= level and close > level:
+            candidates.append({
+                "formation_type": "V_SHAPE",
+                "direction": "BUY",
+                "level": level,
+                "level_index": level_index,
+            })
+
+    if not candidates:
+        return None
+
+    directions = {item["direction"] for item in candidates}
+    levels = {item["level"] for item in candidates}
+
+    if len(directions) > 1 or len(levels) > 1:
+        return {
+            "ambiguous": True,
+            "formation_type": "DAILY_REJECTION_AMBIGUOUS",
+            "direction": None,
+            "level": None,
+            "level_index": None,
+            "rejected_levels": candidates,
+        }
+
+    chosen = max(candidates, key=lambda item: item["level_index"])
+    chosen["ambiguous"] = False
+    chosen["rejected_levels"] = candidates
+
+    return chosen
+
 # DAILY SETUP
 # ============================================================
 
@@ -922,6 +992,39 @@ def detect_daily_setup(
         return structure
 
     # ========================================================
+    # 2. DAILY REJECTION (after engulfing priority, before range gate)
+    rejection = _find_daily_rejection(df)
+    if rejection is not None:
+        if rejection.get("ambiguous"):
+            structure.update({
+                "setup": None,
+                "direction": None,
+                "level": None,
+                "level_index": None,
+                "setup_candle_index": len(df) - 1,
+                "setup_candle_timestamp": df.index[-1],
+                "entry": None,
+                "retest_required": True,
+                "entry_mode": "H4_PATHWAY",
+                "reason": "DAILY_REJECTION_AMBIGUOUS_LEVELS_NO_SIGNAL",
+            })
+            return structure
+
+        structure.update({
+            "setup": rejection["formation_type"],
+            "direction": rejection["direction"],
+            "level": rejection["level"],
+            "level_index": rejection["level_index"],
+            "setup_candle_index": len(df) - 1,
+            "setup_candle_timestamp": df.index[-1],
+            "entry": None,
+            "retest_required": True,
+            "entry_mode": "H4_PATHWAY",
+            "reason": "DAILY_REJECTION_REQUIRES_MATCHING_H4_BOS_AND_RETEST",
+            "rejected_levels": rejection["rejected_levels"],
+        })
+        return structure
+
     # 2. RANGE GATE
     #
     # No engulfing.
@@ -985,3 +1088,5 @@ __all__ = [
     "detect_daily_structure",
     "detect_daily_setup",
 ]
+
+

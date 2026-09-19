@@ -1,7 +1,7 @@
-"""
+﻿"""
 ============================================================
 BLISSFINITY SIGNAL
-Production Strategy Engine â€” Strategy-Aligned Integration
+Production Strategy Engine Ã¢â‚¬â€ Strategy-Aligned Integration
 ============================================================
 
 MASTER FLOW
@@ -388,10 +388,13 @@ def evaluate_symbol(
         )
 
     # --------------------------------------------------------
-    # RANGE = NO SIGNAL FOR STRUCTURAL SETUPS
+    # RANGE DOES NOT AUTOMATICALLY BLOCK STRUCTURAL SETUPS
     # --------------------------------------------------------
-    if trend == "RANGE":
-        return reject("RANGING MARKET = NO SIGNAL")
+    # Structural V/A setups still require:
+    # - A clear BUY/SELL direction
+    # - Matching H4 BOS
+    # - A valid mandatory break/retest
+    # Unclear or conflicting setups remain NO SIGNAL.
 
     if direction not in ("BUY", "SELL"):
         return reject("DAILY SETUP HAS NO VALID DIRECTION")
@@ -497,3 +500,4 @@ __all__ = [
     "validate_market_data",
     "get_current_price",
 ]
+
