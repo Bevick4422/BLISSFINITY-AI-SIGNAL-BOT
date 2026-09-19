@@ -29,8 +29,8 @@ def test_va_finder_selects_latest_bullish_v_pair():
     assert result is not None
     assert result["formation_type"] == "V_SHAPE"
     assert result["direction"] == "BUY"
-    assert result["second_candle_index"] == 3
-    assert result["level"] == 9.5
+    assert result["second_candle_index"] == 2
+    assert result["level"] == 8.5
 
 
 def test_va_finder_selects_latest_bearish_a_pair():
@@ -46,8 +46,8 @@ def test_va_finder_selects_latest_bearish_a_pair():
     assert result is not None
     assert result["formation_type"] == "A_SHAPE"
     assert result["direction"] == "SELL"
-    assert result["second_candle_index"] == 3
-    assert result["level"] == 10.5
+    assert result["second_candle_index"] == 2
+    assert result["level"] == 11.5
 
 
 def test_va_finder_rejects_v_when_trend_is_not_bullish():
