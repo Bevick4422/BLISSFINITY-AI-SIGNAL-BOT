@@ -584,9 +584,10 @@ def update_trade(
 
                     _close_trade(
                         trade,
-                        "BREAKEVEN",
+                        "WIN",
                         entry,
                     )
+                    trade["result_reason"] = "TP1_PROTECTED_WIN"
 
                 else:
 
@@ -784,4 +785,3 @@ def mark_notification_sent(
             return True
 
     return False
-

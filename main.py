@@ -1,4 +1,4 @@
-﻿"""
+"""
 =====================================================
 BLISSFINITY SIGNAL
 Production Main
@@ -699,7 +699,7 @@ async def monitor_active_trades() -> None:
                 # FINAL WIN = TP2
                 # -------------------------------------------------
 
-                if new_status == "WIN":
+                if new_status == "WIN" and updated_trade.get("result_reason") != "TP1_PROTECTED_WIN":
 
                     sent = await send_tp2_hit(updated_trade)
                     if sent:
@@ -858,7 +858,7 @@ async def retry_pending_notifications() -> None:
             if trade.get("tp1_hit", False) and not trade.get("tp1_notified", False):
                 pending.append(("tp1_notified", send_tp1_hit))
 
-            if status == "WIN" and not trade.get("tp2_notified", False):
+            if status == "WIN" and trade.get("result_reason") != "TP1_PROTECTED_WIN" and not trade.get("tp2_notified", False):
                 pending.append(("tp2_notified", send_tp2_hit))
             elif status == "LOSS" and not trade.get("stop_loss_notified", False):
                 pending.append(("stop_loss_notified", send_stop_loss))
