@@ -78,7 +78,7 @@ def format_signal(signal: dict) -> str:
         "🛑 *Stop Loss*\n"
         f"`{signal['stop_loss']:.6f}`\n\n"
 
-        "?? *Take Profit*\n"
+        "🎯 *Take Profit*\n"
         f"`{signal['tp']:.6f}`\n\n"
 
         "⚖️ *Risk : Reward*\n"
@@ -126,12 +126,12 @@ def format_tp(
     symbol = clean_symbol(symbol)
 
     return (
-        "?? *TAKE PROFIT*\n\n"
-        f"?? Pair: `{symbol}`\n"
+        "🎯 *TAKE PROFIT*\n\n"
+        f"📈 Pair: `{symbol}`\n"
         f"{direction_emoji(direction)} "
         f"Direction: *{direction}*\n"
-        "?? Reward: *2R*\n\n"
-        "Excellent execution ??"
+        "⚖️ Reward: *2R*\n\n"
+        "Excellent execution 🚀"
     )
 
 
