@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
@@ -308,69 +309,20 @@ async def send_entry_hit(
 
 
 # =====================================================
-# TP1
+# TAKE PROFIT
 # =====================================================
 
-async def send_tp1_hit(
+async def send_tp_hit(
     trade: dict[str, Any],
 ) -> bool:
-    """
-    Notify that TP1 has been reached.
-    """
-
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
-    )
-
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
+    symbol = trade.get("symbol", "UNKNOWN")
+    direction = trade.get("direction", "UNKNOWN")
 
     message = format_tp(
         symbol,
         direction,
-        1,
-        "2R",
     )
-
-    return await send_message(
-        message
-    )
-
-
-# =====================================================
-# TP2
-# =====================================================
-
-async def send_tp2_hit(
-    trade: dict[str, Any],
-) -> bool:
-    """
-    Notify that TP2 has been reached.
-    """
-
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
-    )
-
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
-
-    message = format_tp(
-        symbol,
-        direction,
-        2,
-        "3R",
-    )
-
-    return await send_message(
-        message
-    )
+    return await send_message(message)
 
 
 # =====================================================
@@ -590,13 +542,144 @@ async def send_weekly_report(
     report: dict[str, Any],
 ) -> bool:
     """
-    Send weekly performance report.
+    Send the weekly bot performance recap.
+
+    Closed trades contribute to the statistics.
+    Ongoing trades are displayed in the trade log but
+    excluded from the closed-book calculations.
     """
 
-    return await send_custom_report(
-        "Weekly Performance Report",
-        report,
-    )
+    gross_wins = float(report.get("gross_wins", 0.0))
+    gross_losses = float(report.get("gross_losses", 0.0))
+    net_closed = float(report.get("net_closed", 0.0))
+
+    wins = int(report.get("wins", 0))
+    losses = int(report.get("losses", 0))
+    breakevens = int(report.get("breakevens", 0))
+    win_rate = float(report.get("win_rate", 0.0))
+
+    def format_r(value: float) -> str:
+        if value == 0:
+            return "0R"
+        return f"{value:+g}R"
+
+    def format_trade(item: dict[str, Any]) -> str:
+        symbol = str(
+            item.get("symbol", "UNKNOWN")
+        ).split("/")[0]
+
+        direction = str(
+            item.get("direction", "")
+        ).upper()
+
+        if direction == "BUY":
+            direction_text = "Long"
+        elif direction == "SELL":
+            direction_text = "Short"
+        else:
+            direction_text = direction.title()
+
+        status = str(
+            item.get("status", "PENDING")
+        ).upper()
+
+        if status == "WIN":
+            outcome = "Tp=2R"
+        elif status == "LOSS":
+            outcome = "SL"
+        elif status == "BREAKEVEN":
+            outcome = "BE"
+        elif status in {"OPEN", "PENDING", "BREAK_EVEN"}:
+            outcome = "ongoing"
+        else:
+            outcome = status.lower()
+
+        return (
+            f"{symbol} {direction_text}="
+            f"{outcome}"
+        )
+
+    day_names = {
+        0: "MONDAY",
+        1: "TUESDAY",
+        2: "WEDNESDAY",
+        3: "THURSDAY",
+        4: "FRIDAY",
+        5: "SATURDAY",
+    }
+
+    grouped: dict[str, list[str]] = {
+        day: []
+        for day in day_names.values()
+    }
+
+    for item in report.get("trade_log", []):
+        created_at = item.get("created_at")
+
+        if not created_at:
+            continue
+
+        try:
+            created_time = datetime.fromisoformat(
+                str(created_at)
+            )
+
+            if created_time.tzinfo is None:
+                created_time = created_time.replace(
+                    tzinfo=timezone.utc
+                )
+
+            day_name = day_names.get(
+                created_time.weekday()
+            )
+
+        except (TypeError, ValueError):
+            continue
+
+        if day_name:
+            grouped[day_name].append(
+                format_trade(item)
+            )
+
+    lines = [
+        "*Weekly Bot Performance Recap*",
+        "",
+        (
+            f"Winners printed {format_r(gross_wins)}, "
+            f"losses took {format_r(gross_losses)}, "
+            f"so the closed book finished "
+            f"{format_r(net_closed)}."
+        ),
+        "",
+        "*Stats*",
+        f"Gross wins: *{format_r(gross_wins)}*",
+        f"Losses: *{format_r(gross_losses)}*",
+        f"Net closed: *{format_r(net_closed)}*",
+        f"Wins: *{wins}*",
+        f"Losses: *{losses}*",
+        f"Breakeven: *{breakevens}*",
+        f"Win rate: *{win_rate:g}%*",
+        "",
+        "*Trade log*",
+    ]
+
+    for day_name in day_names.values():
+        entries = grouped[day_name]
+
+        if not entries:
+            continue
+
+        lines.append("")
+        lines.append(f"*{day_name}*")
+
+        for entry in entries:
+            lines.append(entry)
+
+    message = "\n".join(lines)
+
+    return await send_message(message)
+
+
 async def send_monthly_report(
     report: dict[str, Any],
 ) -> bool:

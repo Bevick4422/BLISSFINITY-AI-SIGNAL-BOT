@@ -35,11 +35,11 @@ Trade Structure
 
 BUY:
 
-    Stop Loss < Entry < TP1 < TP2
+    Stop Loss < Entry < TP
 
 SELL:
 
-    TP2 < TP1 < Entry < Stop Loss
+    TP < Entry < Stop Loss
 
 =========================================================
 """
@@ -101,35 +101,30 @@ def _valid_trade_structure(
     direction: str,
     entry: float,
     stop_loss: float,
-    tp1: float,
-    tp2: float,
+    tp: float,
 ) -> bool:
     """
     Validate the complete trade structure.
 
     BUY:
 
-        SL < Entry < TP1 < TP2
+        SL < Entry < TP
 
     SELL:
 
-        TP2 < TP1 < Entry < SL
+        TP < Entry < SL
     """
 
     if direction == "BUY":
 
         return (
-            stop_loss < entry
-            and tp1 > entry
-            and tp2 > tp1
+            stop_loss < entry < tp
         )
 
     if direction == "SELL":
 
         return (
-            stop_loss > entry
-            and tp1 < entry
-            and tp2 < tp1
+            tp < entry < stop_loss
         )
 
     return False
@@ -145,8 +140,7 @@ def build_signal(
     setup: str,
     entry: float,
     stop_loss: float,
-    tp1: float,
-    tp2: float,
+    tp: float,
     confidence: float = 0.0,
     entry_type: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -207,12 +201,8 @@ def build_signal(
         stop_loss
     )
 
-    tp1 = _safe_float(
-        tp1
-    )
-
-    tp2 = _safe_float(
-        tp2
+    tp = _safe_float(
+        tp
     )
 
     confidence = (
@@ -229,8 +219,7 @@ def build_signal(
     if (
         entry is None
         or stop_loss is None
-        or tp1 is None
-        or tp2 is None
+        or tp is None
     ):
 
         return None
@@ -255,8 +244,7 @@ def build_signal(
         direction=direction,
         entry=entry,
         stop_loss=stop_loss,
-        tp1=tp1,
-        tp2=tp2,
+        tp=tp,
     ):
 
         return None
@@ -280,13 +268,13 @@ def build_signal(
     if direction == "BUY":
 
         reward = (
-            tp2 - entry
+            tp - entry
         )
 
     else:
 
         reward = (
-            entry - tp2
+            entry - tp
         )
 
     if reward <= 0:
@@ -320,9 +308,7 @@ def build_signal(
 
         "stop_loss": stop_loss,
 
-        "tp1": tp1,
-
-        "tp2": tp2,
+        "tp": tp,
 
         "risk": risk,
 
@@ -412,12 +398,8 @@ def validate_signal(
         signal.get("stop_loss")
     )
 
-    tp1 = _safe_float(
-        signal.get("tp1")
-    )
-
-    tp2 = _safe_float(
-        signal.get("tp2")
+    tp = _safe_float(
+        signal.get("tp")
     )
 
     rr = _safe_float(
@@ -427,8 +409,7 @@ def validate_signal(
     if (
         entry is None
         or stop_loss is None
-        or tp1 is None
-        or tp2 is None
+        or tp is None
         or rr is None
     ):
 
@@ -442,8 +423,7 @@ def validate_signal(
         direction=direction,
         entry=entry,
         stop_loss=stop_loss,
-        tp1=tp1,
-        tp2=tp2,
+        tp=tp,
     ):
 
         return False
@@ -525,11 +505,8 @@ def format_signal(
         f"Stop Loss: "
         f"{signal['stop_loss']}\n"
 
-        f"TP1: "
-        f"{signal['tp1']}\n"
-
-        f"TP2: "
-        f"{signal['tp2']}\n\n"
+        f"TP: "
+        f"{signal['tp']}\n\n"
 
         f"RR: "
         f"{signal['rr']:.2f}R\n"

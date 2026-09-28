@@ -1,4 +1,4 @@
-﻿"""
+"""
 ============================================================
 BLISSFINITY SIGNAL
 Production Strategy Engine Ã¢â‚¬â€ Strategy-Aligned Integration
@@ -25,8 +25,7 @@ DAILY FIRST
         |
         v
 RISK
-        -> TP1 = 2R
-        -> TP2 = 3R
+        -> TP = 2R
         |
         v
 PRODUCTION SIGNAL
@@ -190,8 +189,7 @@ def _build_final_signal(
         entry=entry,
         stop_loss=stop_loss,
         direction=direction,
-        tp1_rr=2.0,
-        tp2_rr=3.0,
+        tp_rr=2.0,
     )
 
     if not isinstance(trade, dict) or trade.get("valid") is not True:
@@ -202,8 +200,7 @@ def _build_final_signal(
     print(f"Entry        : {trade['entry']}")
     print(f"Stop Loss    : {trade['stop_loss']}")
     print(f"Risk         : {trade['risk']}")
-    print(f"TP1          : {trade['tp1']}")
-    print(f"TP2          : {trade['tp2']}")
+    print(f"TP           : {trade['tp']}")
     print(f"RR           : {trade['rr']}")
 
     # --------------------------------------------------------
@@ -215,8 +212,7 @@ def _build_final_signal(
         setup=setup,
         entry=trade["entry"],
         stop_loss=trade["stop_loss"],
-        tp1=trade["tp1"],
-        tp2=trade["tp2"],
+        tp=trade["tp"],
         confidence=float(confidence),
         entry_type=entry_type,
     )
@@ -245,8 +241,7 @@ def _build_final_signal(
     print(f"Entry Type   : {signal['entry_type']}")
     print(f"Entry        : {signal['entry']}")
     print(f"Stop Loss    : {signal['stop_loss']}")
-    print(f"TP1          : {signal['tp1']}")
-    print(f"TP2          : {signal['tp2']}")
+    print(f"TP           : {signal['tp']}")
     print(f"Risk         : {signal['risk']}")
     print(f"RR           : {signal['rr']}")
     print(f"Confidence   : {signal['confidence']}")

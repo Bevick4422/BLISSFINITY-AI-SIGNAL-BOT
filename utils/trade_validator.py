@@ -17,8 +17,7 @@ def validate_trade(signal: dict) -> bool:
 
     entry = float(signal["entry"])
     sl = float(signal["stop_loss"])
-    tp1 = float(signal["tp1"])
-    tp2 = float(signal["tp2"])
+    tp = float(signal["tp"])
 
     # -------------------------
     # BUY
@@ -26,7 +25,7 @@ def validate_trade(signal: dict) -> bool:
 
     if direction == "BUY":
 
-        if not (sl < entry < tp1 < tp2):
+        if not (sl < entry < tp):
 
             logger.warning(
                 "Invalid BUY trade rejected: %s",
@@ -41,7 +40,7 @@ def validate_trade(signal: dict) -> bool:
 
     elif direction == "SELL":
 
-        if not (tp2 < tp1 < entry < sl):
+        if not (tp < entry < sl):
 
             logger.warning(
                 "Invalid SELL trade rejected: %s",
@@ -54,7 +53,7 @@ def validate_trade(signal: dict) -> bool:
     # Duplicate Prices
     # -------------------------
 
-    prices = [entry, sl, tp1, tp2]
+    prices = [entry, sl, tp]
 
     if len(set(prices)) != len(prices):
 

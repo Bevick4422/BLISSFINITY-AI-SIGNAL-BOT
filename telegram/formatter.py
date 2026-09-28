@@ -78,11 +78,8 @@ def format_signal(signal: dict) -> str:
         "🛑 *Stop Loss*\n"
         f"`{signal['stop_loss']:.6f}`\n\n"
 
-        "🥇 *Take Profit 1*\n"
-        f"`{signal['tp1']:.6f}`\n\n"
-
-        "🥈 *Take Profit 2*\n"
-        f"`{signal['tp2']:.6f}`\n\n"
+        "?? *Take Profit*\n"
+        f"`{signal['tp']:.6f}`\n\n"
 
         "⚖️ *Risk : Reward*\n"
         f"1 : {signal.get('rr', 2)}\n\n"
@@ -124,23 +121,17 @@ def format_entry(
 def format_tp(
     symbol: str,
     direction: str,
-    level: int,
-    rr: str,
 ) -> str:
 
     symbol = clean_symbol(symbol)
 
     return (
-        f"🎯 *TAKE PROFIT {level}*\n\n"
-
-        f"📈 Pair: `{symbol}`\n"
-
+        "?? *TAKE PROFIT*\n\n"
+        f"?? Pair: `{symbol}`\n"
         f"{direction_emoji(direction)} "
         f"Direction: *{direction}*\n"
-
-        f"⚖️ Reward: *{rr}*\n\n"
-
-        "Excellent execution 🚀"
+        "?? Reward: *2R*\n\n"
+        "Excellent execution ??"
     )
 
 
