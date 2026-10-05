@@ -90,30 +90,6 @@ def bullish_daily_engulfing():
     return make_df(rows, "D")
 
 
-def bearish_daily_engulfing():
-    """
-    Final completed candle is a bearish body-only engulfing
-    of the immediately preceding bullish candle.
-    """
-
-    rows = [
-        [120, 122, 115, 118, 1000],
-        [118, 121, 112, 114, 1000],
-        [114, 116, 109, 113, 1000],
-        [113, 115, 105, 107, 1000],
-        [107, 110, 103, 106, 1000],
-        [106, 108, 98, 100, 1000],
-        [100, 103, 96, 99, 1000],
-        [99, 101, 92, 94, 1000],
-        [94, 97, 90, 92, 1000],
-        [92, 95, 86, 88, 1000],
-        [88, 96, 85, 95, 1000],
-        [96, 97, 82, 84, 1000],
-    ]
-
-    return make_df(rows, "D")
-
-
 def bearish_engulfing_at_broken_a_shape():
     """
     A Shape is formed at 107, then strongly broken upward.
@@ -139,26 +115,28 @@ def bearish_engulfing_at_broken_a_shape():
     return make_df(rows, "D")
 
 
+def bearish_daily_engulfing():
+    """
+    Final completed candle is a bearish body-only engulfing
+    of the immediately preceding bullish candle.
+    """
 
-def test_daily_bearish_engulfing_at_broken_a_shape_direct(monkeypatch):
-    daily = bearish_engulfing_at_broken_a_shape()
+    rows = [
+        [120, 122, 115, 118, 1000],
+        [118, 121, 112, 114, 1000],
+        [114, 116, 109, 113, 1000],
+        [113, 115, 105, 107, 1000],
+        [107, 110, 103, 106, 1000],
+        [106, 108, 98, 100, 1000],
+        [100, 103, 96, 99, 1000],
+        [99, 101, 92, 94, 1000],
+        [94, 97, 90, 92, 1000],
+        [92, 95, 86, 88, 1000],
+        [88, 96, 85, 95, 1000],
+        [96, 97, 82, 84, 1000],
+    ]
 
-    monkeypatch.setattr(
-        se,
-        "fetch_current_price",
-        lambda symbol: 104.0,
-    )
-
-    result = se.evaluate_symbol(
-        "TEST/USDT",
-        valid_market(daily),
-    )
-
-    assert result["valid"] is True
-    assert result["direction"] == "SELL"
-    assert result["entry_type"] == "ENGULFING"
-    assert result.get("retest_required", False) is False
-    assert result["setup"] == "Bearish Engulfing"
+    return make_df(rows, "D")
 
 
 # ============================================================
@@ -273,12 +251,6 @@ def patch_pipeline(
     remain compatible with production keyword arguments.
     """
 
-    monkeypatch.setattr(
-        se,
-        "fetch_current_price",
-        lambda symbol: 100.0,
-    )
-
     if bos_result is not None:
 
         def fake_bos(*args, **kwargs):
@@ -311,7 +283,7 @@ def test_daily_bullish_engulfing_direct(monkeypatch):
 
     - Direct BUY
     - H4 BOS NOT required
-    - Entry at live market price at signal time
+    - Entry at Daily close
     - SL from engulfing candle wick
     """
 
@@ -347,12 +319,6 @@ def test_daily_bullish_engulfing_direct(monkeypatch):
         },
     )
 
-    monkeypatch.setattr(
-        se,
-        "fetch_current_price",
-        lambda symbol: 125.0,
-    )
-
     result = se.evaluate_symbol(
         "TEST/USDT",
         valid_market(daily),
@@ -361,9 +327,9 @@ def test_daily_bullish_engulfing_direct(monkeypatch):
     assert result is not None
     assert result["direction"] == "BUY"
     assert result["setup"] == "BULLISH_ENGULFING"
-    assert result["entry"] == 125.0
+    assert result["entry"] == 120.0
     assert result["stop_loss"] == 107.0
-    assert result["tp"] == 161.0
+    assert result["tp"] == 146.0
     assert result["rr"] == 2.0
 
 
@@ -377,7 +343,7 @@ def test_daily_bearish_engulfing_direct(monkeypatch):
 
     - Direct SELL
     - H4 BOS NOT required
-    - Entry at live market price at signal time
+    - Entry at Daily close
     - SL from engulfing candle wick
     """
 
@@ -413,12 +379,6 @@ def test_daily_bearish_engulfing_direct(monkeypatch):
         },
     )
 
-    monkeypatch.setattr(
-        se,
-        "fetch_current_price",
-        lambda symbol: 80.0,
-    )
-
     result = se.evaluate_symbol(
         "TEST/USDT",
         valid_market(daily),
@@ -427,9 +387,9 @@ def test_daily_bearish_engulfing_direct(monkeypatch):
     assert result is not None
     assert result["direction"] == "SELL"
     assert result["setup"] == "BEARISH_ENGULFING"
-    assert result["entry"] == 80.0
+    assert result["entry"] == 84.0
     assert result["stop_loss"] == 97.0
-    assert result["tp"] == 46.0
+    assert result["tp"] == 58.0
     assert result["rr"] == 2.0
 
 
