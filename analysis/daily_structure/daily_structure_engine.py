@@ -591,6 +591,73 @@ def _is_bearish_rejection(
 # ENGULFING LEVEL VALIDATION
 # ============================================================
 
+def _find_broken_a_shape_level(
+    df: pd.DataFrame,
+    current_index: int,
+) -> Optional[Dict[str, Any]]:
+    """
+    Find the most recent historical A Shape that was strongly
+    broken upward before the current Daily bearish engulfing.
+
+    The search is independent of _find_latest_va_levels() because
+    the bullish breakout candle followed by the bearish engulfing
+    naturally creates a newer A Shape pair.
+    """
+
+    if current_index < 3:
+        return None
+
+    for a_second_index in range(current_index - 2, 0, -1):
+        first = df.iloc[a_second_index - 1]
+        second = df.iloc[a_second_index]
+
+        if (
+            _candle_body_color(first) != "GREEN"
+            or _candle_body_color(second) != "RED"
+        ):
+            continue
+
+        level = float(second["open"])
+
+        # Search for a strong bullish break after this A Shape
+        # and before the current bearish engulfing candle.
+        for break_index in range(
+            a_second_index + 1,
+            current_index,
+        ):
+            candle = df.iloc[break_index]
+
+            try:
+                high = float(candle["high"])
+                low = float(candle["low"])
+                open_price = float(candle["open"])
+                close = float(candle["close"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            total_range = high - low
+
+            if total_range <= 0:
+                continue
+
+            body = abs(close - open_price)
+
+            # Audited strong-break rule: body >= 60% of range.
+            if (body / total_range) < 0.60:
+                continue
+
+            # Bullish break of A Shape / resistance.
+            if close > level and close > open_price:
+                return {
+                    "level": level,
+                    "level_index": a_second_index,
+                    "break_index": break_index,
+                }
+
+    return None
+
+
+
 def _check_engulfing_level_conflict(
     df: pd.DataFrame,
     engulfing: Dict[str, Any],
@@ -661,11 +728,12 @@ def _check_engulfing_level_conflict(
         return {
             "interacts": True,
             "conflict": rejection,
+            "pathway": "H4_BOS" if rejection else "DIRECT_ENGULFING",
             "level": level,
             "level_index": a_info["level_index"],
             "reason": (
                 "Bullish engulfing + same-candle "
-                "resistance rejection"
+                "resistance rejection -> H4 BOS pathway"
                 if rejection
                 else "Clean bullish engulfing at A Shape"
             ),
@@ -677,6 +745,42 @@ def _check_engulfing_level_conflict(
 
     if direction == "SELL":
 
+        # --------------------------------------------------------
+        # BROKEN A SHAPE -> BEARISH FLIP
+        #
+        # A Shape was broken upward by a strong bullish Daily
+        # close. If the current bearish engulfing returns to/touches
+        # that broken level, this is a direct bearish flip.
+        #
+        # H4 BOS is NOT required.
+        # --------------------------------------------------------
+        broken_a = _find_broken_a_shape_level(
+            df,
+            len(df) - 1,
+        )
+
+        if (
+            broken_a is not None
+            and _candle_interacts_with_level(
+                current,
+                broken_a["level"],
+            )
+        ):
+            return {
+                "interacts": True,
+                "conflict": False,
+                "pathway": "DIRECT_ENGULFING",
+                "level": broken_a["level"],
+                "level_index": broken_a["level_index"],
+                "reason": (
+                    "Bearish engulfing at broken A Shape "
+                    "-> direct bearish flip"
+                ),
+            }
+
+        # --------------------------------------------------------
+        # EXISTING V SHAPE / DEMAND PATHWAY
+        # --------------------------------------------------------
         v_info = levels.get("V_SHAPE")
 
         if v_info is None:
@@ -715,11 +819,12 @@ def _check_engulfing_level_conflict(
         return {
             "interacts": True,
             "conflict": rejection,
+            "pathway": "H4_BOS" if rejection else "DIRECT_ENGULFING",
             "level": level,
             "level_index": v_info["level_index"],
             "reason": (
                 "Bearish engulfing + same-candle "
-                "demand rejection"
+                "demand rejection -> H4 BOS pathway"
                 if rejection
                 else "Clean bearish engulfing at V Shape"
             ),
@@ -933,15 +1038,19 @@ def detect_daily_setup(
             return structure
 
         # ----------------------------------------------------
-        # SAME-CANDLE CONFLICT
+        # H4 PATHWAY
+        #
+        # Engulfing + same-candle rejection is not invalid.
+        # It becomes a continuation pathway requiring:
+        #   Daily setup -> H4 BOS -> H4 retest.
         # ----------------------------------------------------
 
-        if conflict["conflict"]:
+        if conflict.get("pathway") == "H4_BOS":
 
             structure.update(
                 {
-                    "setup": None,
-                    "direction": None,
+                    "setup": engulfing["setup"],
+                    "direction": engulfing["direction"],
                     "level": conflict["level"],
                     "level_index": conflict["level_index"],
                     "setup_candle_index": engulfing[
@@ -951,10 +1060,10 @@ def detect_daily_setup(
                         "setup_candle_timestamp"
                     ],
                     "entry": None,
-                    "retest_required": False,
-                    "entry_mode": None,
+                    "retest_required": True,
+                    "entry_mode": "H4_PATHWAY",
                     "reason": (
-                        "ENGULFING_REJECTION_CONFLICT"
+                        "DAILY_ENGULFING_REJECTION_REQUIRES_H4_BOS_AND_RETEST"
                     ),
                 }
             )

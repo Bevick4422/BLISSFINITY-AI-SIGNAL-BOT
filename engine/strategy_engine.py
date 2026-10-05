@@ -39,6 +39,7 @@ from analysis.daily_structure.daily_structure_engine import detect_daily_setup
 from analysis.h4_bos.h4_bos_engine import detect_h4_bos
 from analysis.entry.break_retest import detect_break_retest
 from analysis.risk.stoploss_engine import calculate_stop_loss
+from market_data.fetcher import fetch_current_price
 from engine.risk_engine import build_trade
 from signal_engine.signal_builder import (
     build_signal as build_production_signal,
@@ -286,7 +287,7 @@ def evaluate_symbol(
     if len(h4) < MIN_H4_CANDLES:
         return reject("INSUFFICIENT COMPLETED H4 DATA")
 
-    current_price = get_current_price(h4)
+    current_price = fetch_current_price(symbol)
 
     if current_price is None:
         return reject("CURRENT PRICE UNAVAILABLE")
@@ -331,20 +332,22 @@ def evaluate_symbol(
     # Therefore RANGE must NOT reject a valid Daily Engulfing.
     # The RANGE gate is applied only to structural V/A setups.
     # --------------------------------------------------------
-    if setup_name in (
-        "bullish engulfing",
-        "bearish engulfing",
+    if (
+        setup_name in (
+            "bullish engulfing",
+            "bearish engulfing",
+        )
+        and daily_setup.get("entry_mode") != "H4_PATHWAY"
     ):
-        daily_entry = daily_setup.get("entry")
-
-        if daily_entry is None:
-            # Strategy permits current market price when detection occurs.
-            daily_entry = current_price
-
-        try:
-            entry = float(daily_entry)
-        except (TypeError, ValueError):
-            return reject("INVALID DAILY ENGULFING ENTRY")
+        # Direct Daily Engulfing path.
+        #
+        # When entry_mode is H4_PATHWAY, the Daily Engulfing
+        # has also been classified as a rejection and must
+        # continue through the existing H4 BOS + retest path.
+        #
+        # The executable entry for direct engulfing is the
+        # live market price at signal time.
+        entry = float(current_price)
 
         setup_index = _get_setup_candle_index(
             daily_setup,

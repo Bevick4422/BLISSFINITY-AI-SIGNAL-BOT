@@ -114,6 +114,53 @@ def bearish_daily_engulfing():
     return make_df(rows, "D")
 
 
+def bearish_engulfing_at_broken_a_shape():
+    """
+    A Shape is formed at 107, then strongly broken upward.
+    The final Daily candle is a bearish body-only engulfing
+    that returns through the broken A Shape level.
+    """
+
+    rows = [
+        [100, 103, 98, 102, 1000],
+        [102, 105, 100, 104, 1000],
+        [104, 106, 101, 103, 1000],
+        [103, 108, 102, 107, 1000],
+        [107, 109, 104, 105, 1000],  # A Shape: level = 107
+        [105, 116, 104, 115, 1000],  # strong bullish break
+        [115, 117, 110, 114, 1000],
+        [114, 116, 109, 112, 1000],
+        [112, 115, 108, 113, 1000],
+        [113, 116, 109, 114, 1000],
+        [114, 118, 110, 116, 1000],
+        [116, 117, 100, 104, 1000],  # bearish engulfing, touches 107
+    ]
+
+    return make_df(rows, "D")
+
+
+
+def test_daily_bearish_engulfing_at_broken_a_shape_direct(monkeypatch):
+    daily = bearish_engulfing_at_broken_a_shape()
+
+    monkeypatch.setattr(
+        se,
+        "fetch_current_price",
+        lambda symbol: 104.0,
+    )
+
+    result = se.evaluate_symbol(
+        "TEST/USDT",
+        valid_market(daily),
+    )
+
+    assert result["valid"] is True
+    assert result["direction"] == "SELL"
+    assert result["entry_type"] == "ENGULFING"
+    assert result.get("retest_required", False) is False
+    assert result["setup"] == "Bearish Engulfing"
+
+
 # ============================================================
 # RANGE FIXTURE
 # ============================================================
@@ -226,6 +273,12 @@ def patch_pipeline(
     remain compatible with production keyword arguments.
     """
 
+    monkeypatch.setattr(
+        se,
+        "fetch_current_price",
+        lambda symbol: 100.0,
+    )
+
     if bos_result is not None:
 
         def fake_bos(*args, **kwargs):
@@ -258,7 +311,7 @@ def test_daily_bullish_engulfing_direct(monkeypatch):
 
     - Direct BUY
     - H4 BOS NOT required
-    - Entry at Daily close
+    - Entry at live market price at signal time
     - SL from engulfing candle wick
     """
 
@@ -294,6 +347,12 @@ def test_daily_bullish_engulfing_direct(monkeypatch):
         },
     )
 
+    monkeypatch.setattr(
+        se,
+        "fetch_current_price",
+        lambda symbol: 125.0,
+    )
+
     result = se.evaluate_symbol(
         "TEST/USDT",
         valid_market(daily),
@@ -302,11 +361,10 @@ def test_daily_bullish_engulfing_direct(monkeypatch):
     assert result is not None
     assert result["direction"] == "BUY"
     assert result["setup"] == "BULLISH_ENGULFING"
-    assert result["entry"] == 120.0
+    assert result["entry"] == 125.0
     assert result["stop_loss"] == 107.0
-    assert result["tp1"] == 146.0
-    assert result["tp2"] == 159.0
-    assert result["rr"] == 3.0
+    assert result["tp"] == 161.0
+    assert result["rr"] == 2.0
 
 
 # ============================================================
@@ -319,7 +377,7 @@ def test_daily_bearish_engulfing_direct(monkeypatch):
 
     - Direct SELL
     - H4 BOS NOT required
-    - Entry at Daily close
+    - Entry at live market price at signal time
     - SL from engulfing candle wick
     """
 
@@ -355,6 +413,12 @@ def test_daily_bearish_engulfing_direct(monkeypatch):
         },
     )
 
+    monkeypatch.setattr(
+        se,
+        "fetch_current_price",
+        lambda symbol: 80.0,
+    )
+
     result = se.evaluate_symbol(
         "TEST/USDT",
         valid_market(daily),
@@ -363,11 +427,10 @@ def test_daily_bearish_engulfing_direct(monkeypatch):
     assert result is not None
     assert result["direction"] == "SELL"
     assert result["setup"] == "BEARISH_ENGULFING"
-    assert result["entry"] == 84.0
+    assert result["entry"] == 80.0
     assert result["stop_loss"] == 97.0
-    assert result["tp1"] == 58.0
-    assert result["tp2"] == 45.0
-    assert result["rr"] == 3.0
+    assert result["tp"] == 46.0
+    assert result["rr"] == 2.0
 
 
 # ============================================================
@@ -521,9 +584,8 @@ def test_structural_valid_bos_and_retest_signal(monkeypatch):
     assert result["setup"] == "V_SHAPE"
     assert result["entry"] == 100.0
     assert result["stop_loss"] == 95.0
-    assert result["tp1"] == 110.0
-    assert result["tp2"] == 115.0
-    assert result["rr"] == 3.0
+    assert result["tp"] == 110.0
+    assert result["rr"] == 2.0
 
 
 # ============================================================

@@ -71,6 +71,15 @@ logger = logging.getLogger("BLISSFINITY")
 signals_today = 0
 current_day = datetime.now(UTC).date()
 
+# Scanner-level daily opportunity allocation state.
+# This does not alter strategy evaluation or signal validation.
+daily_opportunity_state = {
+    "day": current_day,
+    "opening_complete": False,
+    "deferred": set(),
+    "deferred_seen_this_scan": set(),
+}
+
 
 def reset_daily_counter() -> None:
     """
@@ -85,6 +94,10 @@ def reset_daily_counter() -> None:
     if today != current_day:
         current_day = today
         signals_today = 0
+        daily_opportunity_state["day"] = today
+        daily_opportunity_state["opening_complete"] = False
+        daily_opportunity_state["deferred"].clear()
+        daily_opportunity_state["deferred_seen_this_scan"].clear()
 
         logger.info("Daily signal counter reset.")
 
@@ -95,6 +108,19 @@ def daily_limit_reached() -> bool:
     """
 
     return signals_today >= MAX_DAILY_SIGNALS
+
+
+def get_opportunity_identity(signal: dict) -> str:
+    # Scanner-level identity only. Strategy logic is untouched.
+    # Live entry is excluded because it changes continuously.
+    return "|".join(
+        [
+            str(signal.get("symbol")),
+            str(signal.get("direction")),
+            str(signal.get("setup")),
+            repr(signal.get("stop_reference")),
+        ]
+    )
 
 
 # =====================================================
@@ -224,7 +250,10 @@ def startup() -> None:
 # SIGNAL SCANNING
 # =====================================================
 
-async def scan_symbol(symbol: str) -> None:
+async def scan_symbol(
+    symbol: str,
+    opening_scan: bool = False,
+) -> bool:
     """
     Scan one symbol and record a valid trading signal.
 
@@ -251,13 +280,13 @@ async def scan_symbol(symbol: str) -> None:
 
         reset_daily_counter()
 
-        if daily_limit_reached():
+        if daily_limit_reached() and not opening_scan:
             logger.info(
                 "Daily signal limit reached. "
                 "Skipping %s.",
                 symbol,
             )
-            return
+            return False
 
         # -------------------------------------------------
         # DUPLICATE ACTIVE TRADE PROTECTION
@@ -316,6 +345,45 @@ async def scan_symbol(symbol: str) -> None:
                 symbol,
             )
             return
+
+        # -------------------------------------------------
+        # DAILY OPPORTUNITY ALLOCATION
+        #
+        # Scanner-level only. The strategy has already produced
+        # and validated this signal.
+        #
+        # The first valid opportunity is allowed through.
+        # Additional opportunities found during the opening
+        # scan are deferred so they cannot fire again simply
+        # because the scanner runs another 60-second cycle.
+        # -------------------------------------------------
+
+        opportunity_key = get_opportunity_identity(signal)
+
+        if not daily_opportunity_state["opening_complete"]:
+            if signals_today == 0:
+                logger.info(
+                    "OPENING OPPORTUNITY SELECTED | %s",
+                    opportunity_key,
+                )
+            else:
+                daily_opportunity_state["deferred"].add(
+                    opportunity_key
+                )
+
+                logger.info(
+                    "OPENING OPPORTUNITY DEFERRED | %s",
+                    opportunity_key,
+                )
+                return False
+
+        elif opportunity_key in daily_opportunity_state["deferred"]:
+            daily_opportunity_state["deferred_seen_this_scan"].add(opportunity_key)
+            logger.info(
+                "DEFERRED OPPORTUNITY STILL ACTIVE | %s",
+                opportunity_key,
+            )
+            return False
 
         # -------------------------------------------------
         # SECOND DUPLICATE CHECK
@@ -447,17 +515,56 @@ async def scan_market() -> None:
         )
         return
 
+    opening_scan = not daily_opportunity_state["opening_complete"]
+
+    # Track deferred opportunities that are still valid during this scan.
+    daily_opportunity_state["deferred_seen_this_scan"].clear()
+
+    if opening_scan:
+        logger.info(
+            "DAILY OPENING OPPORTUNITY SCAN | "
+            "First valid opportunity will be sent; "
+            "other valid opening opportunities will be deferred."
+        )
+
     for symbol in SYMBOLS:
 
-        if daily_limit_reached():
+        # During the opening scan we deliberately continue through
+        # all symbols after the first signal so additional valid
+        # opportunities can be identified and deferred.
+        #
+        # After the opening scan, the existing daily limit behavior
+        # remains unchanged.
+        if daily_limit_reached() and not opening_scan:
             logger.info(
                 "Daily signal limit reached. "
                 "Stopping scan."
             )
             break
 
-        await scan_symbol(symbol)
+        await scan_symbol(
+            symbol,
+            opening_scan=opening_scan,
+        )
 
+    if opening_scan:
+        daily_opportunity_state["opening_complete"] = True
+
+        logger.info(
+            "DAILY OPENING OPPORTUNITY SCAN COMPLETE | "
+            "Signals Today: %s/%s | "
+            "Deferred Opportunities: %s",
+            signals_today,
+            MAX_DAILY_SIGNALS,
+            len(daily_opportunity_state["deferred"]),
+        )
+    else:
+        # Release deferred opportunities that disappeared during this scan.
+        daily_opportunity_state["deferred"] = (
+            daily_opportunity_state["deferred"]
+            &
+            daily_opportunity_state["deferred_seen_this_scan"]
+        )
 
 # =====================================================
 # ACTIVE TRADE MONITORING
@@ -1019,3 +1126,10 @@ if __name__ == "__main__":
         )
 
         traceback.print_exc()
+
+
+
+
+
+
+
