@@ -210,8 +210,10 @@ def record_signal(
         "setup": signal.get("setup"),
         "entry": signal.get("entry"),
         "stop_loss": signal.get("stop_loss"),
-        "tp1": signal.get("tp1"),
-        "tp2": signal.get("tp2"),
+        # Current notification/trade lifecycle uses one final TP.
+        # Historical strategy output provides TP1/TP2; TP1 is the
+        # 2R target and is mapped to the single production TP.
+        "tp": signal.get("tp", signal.get("tp1", signal.get("tp2"))),
         "risk": signal.get("risk"),
         "original_risk": signal.get("risk"),
         "rr": signal.get("rr"),
@@ -221,12 +223,13 @@ def record_signal(
         "state": "PENDING",
         "result": None,
 
-        "tp1_hit": False,
         "break_even": False,
         "last_monitored_candle": None,
 
         # Persistent notification protection.
         "entry_notified": False,
+        "tp_notified": False,
+        # Retained for old persisted trades; no longer emitted.
         "tp1_notified": False,
         "tp2_notified": False,
         "stop_loss_notified": False,
@@ -433,8 +436,12 @@ def update_trade(
 
         entry = float(trade["entry"])
         stop_loss = float(trade["stop_loss"])
-        tp1 = float(trade["tp1"])
-        tp2 = float(trade["tp2"])
+        tp = float(
+            trade.get("tp", trade.get("tp1", trade.get("tp2")))
+        )
+        original_risk = float(
+            trade.get("original_risk", abs(entry - stop_loss))
+        )
 
         price = float(current_price)
 
@@ -539,14 +546,14 @@ def update_trade(
             if direction == "BUY":
 
                 stopped = low <= stop_loss
-                reached_tp1 = high >= tp1
-                reached_tp2 = high >= tp2
+                reached_tp = high >= tp
+                reached_protection = (not trade.get("break_even")) and high >= entry + original_risk
 
             else:
 
                 stopped = high >= stop_loss
-                reached_tp1 = low <= tp1
-                reached_tp2 = low <= tp2
+                reached_tp = low <= tp
+                reached_protection = (not trade.get("break_even")) and low <= entry - original_risk
 
             # -------------------------------------------------
             # If both SL and a target were touched in the same
@@ -555,7 +562,7 @@ def update_trade(
             # -------------------------------------------------
 
             if stopped and (
-                reached_tp1 or reached_tp2
+                reached_tp or reached_protection
             ):
 
                 _add_event(
@@ -587,6 +594,7 @@ def update_trade(
                         "BREAKEVEN",
                         entry,
                     )
+                    trade["result_reason"] = "PROTECTED_RETURN_TO_ENTRY"
 
                 else:
 
@@ -597,27 +605,30 @@ def update_trade(
                     )
 
             # -------------------------------------------------
-            # TP2
+            # SINGLE TAKE PROFIT
             # -------------------------------------------------
 
-            elif reached_tp2:
+            elif reached_tp:
 
                 _close_trade(
                     trade,
                     "WIN",
-                    tp2,
+                    tp,
                 )
 
             # -------------------------------------------------
-            # TP1 -> MOVE STOP TO ENTRY
+            # 1R PROTECTION -> MOVE STOP TO ENTRY
             # -------------------------------------------------
 
             elif (
-                reached_tp1
-                and not trade.get("tp1_hit")
+                reached_protection
+                and not trade.get("break_even")
             ):
 
-                trade["tp1_hit"] = True
+                trade["original_risk"] = original_risk
+                trade["original_stop_loss"] = trade.get(
+                    "original_stop_loss", stop_loss
+                )
                 trade["break_even"] = True
                 trade["stop_loss"] = entry
                 trade["status"] = "OPEN"
@@ -626,13 +637,7 @@ def update_trade(
 
                 _add_event(
                     trade,
-                    "TP1_REACHED",
-                    tp1,
-                )
-
-                _add_event(
-                    trade,
-                    "STOP_MOVED_TO_ENTRY",
+                    "BREAK_EVEN_PROTECTION",
                     entry,
                 )
 
@@ -713,6 +718,7 @@ def claim_notification(trade_id, notification_key):
 
     allowed_keys = {
         "entry_notified",
+        "tp_notified",
         "tp1_notified",
         "tp2_notified",
         "stop_loss_notified",
@@ -732,6 +738,7 @@ def claim_notification(trade_id, notification_key):
 
         # Support older trades created before notification flags existed
         trade.setdefault("entry_notified", False)
+        trade.setdefault("tp_notified", False)
         trade.setdefault("tp1_notified", False)
         trade.setdefault("tp2_notified", False)
         trade.setdefault("stop_loss_notified", False)
@@ -755,6 +762,7 @@ def mark_notification_sent(
     """Persist successful notification delivery; return False on save errors."""
     allowed_keys = {
         "entry_notified",
+        "tp_notified",
         "tp1_notified",
         "tp2_notified",
         "stop_loss_notified",

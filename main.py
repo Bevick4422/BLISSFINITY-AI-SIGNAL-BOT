@@ -1,4 +1,4 @@
-﻿"""
+"""
 =====================================================
 BLISSFINITY SIGNAL
 Production Main
@@ -35,8 +35,7 @@ from engine.strategy_engine import evaluate_symbol
 from telegram.sender import (
     send_signal,
     send_entry_hit,
-    send_tp1_hit,
-    send_tp2_hit,
+    send_tp_hit,
     send_stop_loss,
     send_breakeven,
 )
@@ -468,16 +467,15 @@ async def monitor_active_trades() -> None:
     """
     Monitor pending and open trades.
 
-    Notifications are sent only when a new trade event
-    is detected:
+    Notifications are sent only for lifecycle transitions:
 
         - Entry reached
-        - TP1 reached
-        - TP2 reached
-        - Stop-loss reached
-        - Final breakeven closure
+        - Single take-profit closes as WIN
+        - Stop-loss closes as LOSS
+        - Protected return to entry closes as BREAKEVEN
 
-    There is intentionally NO TP3 event.
+    Reaching 1R only moves the stop to entry; it does not
+    send a TP notification.
     """
 
     active_trades = get_active_trades()
@@ -578,9 +576,6 @@ async def monitor_active_trades() -> None:
 
             previous_status = trade.get("status")
             previous_state = trade.get("state")
-            previous_tp1_hit = bool(
-                trade.get("tp1_hit", False)
-            )
             previous_stop_loss = trade.get(
                 "stop_loss"
             )
@@ -610,12 +605,6 @@ async def monitor_active_trades() -> None:
 
             new_status = updated_trade.get("status")
             new_state = updated_trade.get("state")
-            new_tp1_hit = bool(
-                updated_trade.get(
-                    "tp1_hit",
-                    False,
-                )
-            )
             new_stop_loss = updated_trade.get(
                 "stop_loss"
             )
@@ -647,37 +636,10 @@ async def monitor_active_trades() -> None:
                 )
 
             # -------------------------------------------------
-            # TP1 REACHED
+            # SINGLE-TP NOTIFICATION MODEL
+            # 1R protection moves are internal state changes;
+            # only the final TP produces a TP notification.
             # -------------------------------------------------
-
-            if (
-                not previous_tp1_hit
-                and new_tp1_hit
-            ):
-                sent = await send_tp1_hit(updated_trade)
-                if sent:
-                    marked = mark_notification_sent(str(trade_id), "tp1_notified")
-                    if not marked:
-                        logger.error(
-                            "Alert sent but notification flag could not be saved | Trade: %s | Event: %s",
-                            trade_id,
-                            "tp1_notified",
-                        )
-
-                logger.info(
-                    "TP1 HIT | %s | Price: %s | "
-                    "Telegram: %s",
-                    symbol,
-                    current_price,
-                    sent,
-                )
-
-                logger.info(
-                    "STOP MOVED TO BREAKEVEN | %s | "
-                    "Entry: %s",
-                    symbol,
-                    updated_trade.get("entry"),
-                )
 
             # -------------------------------------------------
             # FINAL TRADE RESULT
@@ -696,23 +658,23 @@ async def monitor_active_trades() -> None:
             ):
 
                 # -------------------------------------------------
-                # FINAL WIN = TP2
+                # FINAL WIN = SINGLE TP
                 # -------------------------------------------------
 
                 if new_status == "WIN":
 
-                    sent = await send_tp2_hit(updated_trade)
+                    sent = await send_tp_hit(updated_trade)
                     if sent:
-                        marked = mark_notification_sent(str(trade_id), "tp2_notified")
+                        marked = mark_notification_sent(str(trade_id), "tp_notified")
                         if not marked:
                             logger.error(
                                 "Alert sent but notification flag could not be saved | Trade: %s | Event: %s",
                                 trade_id,
-                                "tp2_notified",
+                                "tp_notified",
                             )
 
                     logger.info(
-                        "TP2 HIT | %s | Price: %s | "
+                        "TP HIT | %s | Price: %s | "
                         "Telegram: %s",
                         symbol,
                         current_price,
@@ -833,11 +795,6 @@ async def retry_pending_notifications() -> None:
 
     terminal_statuses = {"WIN", "LOSS", "BREAKEVEN"}
 
-    senders = (
-        ("entry_notified", send_entry_hit),
-        ("tp1_notified", send_tp1_hit),
-    )
-
     for trade in get_all_trades():
         trade_id = trade.get("trade_id")
         status = trade.get("status")
@@ -855,11 +812,11 @@ async def retry_pending_notifications() -> None:
             if not trade.get("entry_notified", False):
                 pending.append(("entry_notified", send_entry_hit))
 
-            if trade.get("tp1_hit", False) and not trade.get("tp1_notified", False):
-                pending.append(("tp1_notified", send_tp1_hit))
-
-            if status == "WIN" and not trade.get("tp2_notified", False):
-                pending.append(("tp2_notified", send_tp2_hit))
+            if status == "WIN" and not (
+                trade.get("tp_notified", False)
+                or trade.get("tp2_notified", False)
+            ):
+                pending.append(("tp_notified", send_tp_hit))
             elif status == "LOSS" and not trade.get("stop_loss_notified", False):
                 pending.append(("stop_loss_notified", send_stop_loss))
             elif status == "BREAKEVEN" and not trade.get("breakeven_notified", False):

@@ -311,66 +311,15 @@ async def send_entry_hit(
 # TP1
 # =====================================================
 
-async def send_tp1_hit(
+async def send_tp_hit(
     trade: dict[str, Any],
 ) -> bool:
-    """
-    Notify that TP1 has been reached.
-    """
+    """Notify that the single final take-profit target was reached."""
 
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
-    )
-
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
-
-    message = format_tp(
-        symbol,
-        direction,
-        1,
-        "2R",
-    )
-
-    return await send_message(
-        message
-    )
-
-
-# =====================================================
-# TP2
-# =====================================================
-
-async def send_tp2_hit(
-    trade: dict[str, Any],
-) -> bool:
-    """
-    Notify that TP2 has been reached.
-    """
-
-    symbol = trade.get(
-        "symbol",
-        "UNKNOWN",
-    )
-
-    direction = trade.get(
-        "direction",
-        "UNKNOWN",
-    )
-
-    message = format_tp(
-        symbol,
-        direction,
-        2,
-        "3R",
-    )
-
-    return await send_message(
-        message
-    )
+    symbol = trade.get("symbol", "UNKNOWN")
+    direction = trade.get("direction", "UNKNOWN")
+    message = format_tp(symbol, direction, "2R")
+    return await send_message(message)
 
 
 # =====================================================
@@ -589,14 +538,61 @@ async def send_heartbeat() -> bool:
 async def send_weekly_report(
     report: dict[str, Any],
 ) -> bool:
-    """
-    Send weekly performance report.
-    """
+    """Send a detailed weekly performance recap and daily trade log."""
 
-    return await send_custom_report(
-        "Weekly Performance Report",
-        report,
-    )
+    total = report.get("total", 0)
+    wins = report.get("wins", 0)
+    losses = report.get("losses", 0)
+    breakevens = report.get("breakevens", 0)
+    closed = report.get("closed_trades", wins + losses + breakevens)
+    win_rate = report.get("win_rate", 0.0)
+    net_r = report.get("net_closed_r", report.get("total_rr", 0.0))
+    gross_win_r = report.get("gross_win_r", 0.0)
+    gross_loss_r = report.get("gross_loss_r", 0.0)
+    trades = report.get("trades", [])
+
+    lines = [
+        "📊 *BLISSFINITY WEEKLY PERFORMANCE REPORT*",
+        "",
+        f"Trades recorded: *{total}*",
+        f"Closed trades: *{closed}*",
+        f"Wins: *{wins}* | Losses: *{losses}* | Breakevens: *{breakevens}*",
+        f"Win rate: *{win_rate:.2f}%*",
+        f"Gross winning R: *{gross_win_r:+.2f}R*",
+        f"Gross losing R: *{gross_loss_r:+.2f}R*",
+        f"Net closed R: *{net_r:+.2f}R*",
+        "",
+        "*DAILY TRADE LOG*",
+    ]
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for trade in trades:
+        created_at = str(trade.get("created_at", "Unknown date"))
+        day = created_at[:10]
+        grouped.setdefault(day, []).append(trade)
+
+    if not grouped:
+        lines.append("No trades recorded this week.")
+    else:
+        for day in sorted(grouped):
+            lines.extend(["", f"*{day}*"])
+            for trade in grouped[day]:
+                symbol = trade.get("symbol", "UNKNOWN")
+                direction = trade.get("direction", "UNKNOWN")
+                status = str(trade.get("status", trade.get("state", "PENDING"))).upper()
+                if status == "WIN":
+                    outcome = "WIN (TP)"
+                elif status == "LOSS":
+                    outcome = "LOSS (SL)"
+                elif status == "BREAKEVEN":
+                    outcome = "BREAKEVEN"
+                else:
+                    outcome = f"ONGOING ({status})"
+                r_value = trade.get("r_multiple")
+                r_text = f" | {float(r_value):+.2f}R" if r_value is not None else ""
+                lines.append(f"• `{symbol}` {direction} — {outcome}{r_text}")
+
+    return await send_message("\n".join(lines))
 async def send_monthly_report(
     report: dict[str, Any],
 ) -> bool:

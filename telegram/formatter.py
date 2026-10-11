@@ -27,12 +27,12 @@ def direction_emoji(direction: str) -> str:
     direction = direction.upper()
 
     if direction == "BUY":
-        return "🟢"
+        return "\U0001F7E2"
 
     if direction == "SELL":
-        return "🔴"
+        return "\U0001F534"
 
-    return "⚪"
+    return "\u26AA"
 
 
 # =====================================================
@@ -54,43 +54,26 @@ def clean_symbol(symbol: str) -> str:
 def format_signal(signal: dict) -> str:
 
     symbol = signal.get("symbol") or signal.get("pair")
-
-    direction = (
-        signal.get("direction")
-        or signal.get("side")
-        or ""
-    )
-
+    direction = signal.get("direction") or signal.get("side") or ""
+    target = signal.get("tp", signal.get("tp1", signal.get("tp2")))
     symbol = clean_symbol(symbol)
 
     return (
-        "🚨 *BLISSFINITY SIGNAL*\n\n"
-
-        "📈 *Pair*\n"
+        "\U0001F6A8 *BLISSFINITY SIGNAL*\n\n"
+        "\U0001F4C8 *Pair*\n"
         f"`{symbol}`\n\n"
-
         f"{direction_emoji(direction)} *Direction*\n"
         f"{direction}\n\n"
-
-        "🎯 *Entry*\n"
+        "\U0001F3AF *Entry*\n"
         f"`{signal['entry']:.6f}`\n\n"
-
-        "🛑 *Stop Loss*\n"
+        "\U0001F6D1 *Stop Loss*\n"
         f"`{signal['stop_loss']:.6f}`\n\n"
-
-        "🥇 *Take Profit 1*\n"
-        f"`{signal['tp1']:.6f}`\n\n"
-
-        "🥈 *Take Profit 2*\n"
-        f"`{signal['tp2']:.6f}`\n\n"
-
-        "⚖️ *Risk : Reward*\n"
+        "\U0001F3AF *Take Profit*\n"
+        f"`{target:.6f}`\n\n"
+        "\u2696\uFE0F *Risk : Reward*\n"
         f"1 : {signal.get('rr', 2)}\n\n"
 
-        "📊 *Confidence*\n"
-        f"{signal.get('confidence', 80)}%\n\n"
-
-        f"🕒 {utc_time()}"
+        f"\U0001F552 {utc_time()}"
     )
 
 
@@ -106,9 +89,9 @@ def format_entry(
     symbol = clean_symbol(symbol)
 
     return (
-        "🟢 *ENTRY HIT*\n\n"
+        "ðŸŸ¢ *ENTRY HIT*\n\n"
 
-        f"📈 Pair: `{symbol}`\n"
+        f"ðŸ“ˆ Pair: `{symbol}`\n"
 
         f"{direction_emoji(direction)} "
         f"Direction: *{direction}*\n\n"
@@ -124,23 +107,18 @@ def format_entry(
 def format_tp(
     symbol: str,
     direction: str,
-    level: int,
-    rr: str,
+    rr: str = "2R",
 ) -> str:
+    """Format the single final take-profit notification."""
 
     symbol = clean_symbol(symbol)
 
     return (
-        f"🎯 *TAKE PROFIT {level}*\n\n"
-
-        f"📈 Pair: `{symbol}`\n"
-
-        f"{direction_emoji(direction)} "
-        f"Direction: *{direction}*\n"
-
-        f"⚖️ Reward: *{rr}*\n\n"
-
-        "Excellent execution 🚀"
+        "ðŸŽ¯ *TAKE PROFIT HIT*\n\n"
+        f"ðŸ“ˆ Pair: `{symbol}`\n"
+        f"{direction_emoji(direction)} Direction: *{direction}*\n"
+        f"âš–ï¸ Reward: *{rr}*\n\n"
+        "Trade closed as a win."
     )
 
 
@@ -156,9 +134,9 @@ def format_stop(
     symbol = clean_symbol(symbol)
 
     return (
-        "🔴 *STOP LOSS HIT*\n\n"
+        "ðŸ”´ *STOP LOSS HIT*\n\n"
 
-        f"📈 Pair: `{symbol}`\n"
+        f"ðŸ“ˆ Pair: `{symbol}`\n"
 
         f"{direction_emoji(direction)} "
         f"Direction: *{direction}*\n\n"
@@ -179,9 +157,9 @@ def format_breakeven(
     symbol = clean_symbol(symbol)
 
     return (
-        "⚪ *BREAKEVEN*\n\n"
+        "âšª *BREAKEVEN*\n\n"
 
-        f"📈 Pair: `{symbol}`\n"
+        f"ðŸ“ˆ Pair: `{symbol}`\n"
 
         f"{direction_emoji(direction)} "
         f"Direction: *{direction}*\n\n"

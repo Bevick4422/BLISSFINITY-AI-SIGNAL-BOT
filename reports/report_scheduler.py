@@ -39,12 +39,12 @@ async def run_report_scheduler():
 
             # =====================================================
             # WEEKLY REPORT
-            # Every Sunday between 23:00 and 23:59 UTC
+            # Every Sunday between 01:00 and 01:59 UTC
             # =====================================================
 
             if (
                 now.weekday() == 6
-                and now.hour == 23
+                and now.hour == 1
                 and last_week_sent != current_week
             ):
 

@@ -117,6 +117,25 @@ def _calculate_summary(
 
     total_rr = round(sum(r_values), 4)
 
+    winning_r = []
+    losing_r = []
+    for trade in trades:
+        status = _normalise_status(trade)
+        value = trade.get("r_multiple")
+        if value is None:
+            continue
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if status == "WIN":
+            winning_r.append(numeric_value)
+        elif status == "LOSS":
+            losing_r.append(numeric_value)
+
+    gross_win_r = round(sum(winning_r), 4)
+    gross_loss_r = round(sum(losing_r), 4)
+
     average_rr = (
         round(total_rr / len(r_values), 4)
         if r_values
@@ -139,6 +158,9 @@ def _calculate_summary(
         "breakevens": breakevens,
         "win_rate": win_rate,
         "total_rr": total_rr,
+        "gross_win_r": gross_win_r,
+        "gross_loss_r": gross_loss_r,
+        "net_closed_r": total_rr,
         "average_rr": average_rr,
     }
 
@@ -198,4 +220,16 @@ def get_weekly_performance_summary() -> dict[str, Any]:
         if created_time >= week_start:
             trades.append(trade)
 
-    return _calculate_summary(trades)
+    summary = _calculate_summary(trades)
+    summary["trades"] = [
+        {
+            "trade_id": trade.get("trade_id"),
+            "symbol": trade.get("symbol", "UNKNOWN"),
+            "direction": trade.get("direction", "UNKNOWN"),
+            "status": _normalise_status(trade),
+            "created_at": trade.get("created_at"),
+            "r_multiple": trade.get("r_multiple"),
+        }
+        for trade in trades
+    ]
+    return summary
