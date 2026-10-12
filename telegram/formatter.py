@@ -27,12 +27,12 @@ def direction_emoji(direction: str) -> str:
     direction = direction.upper()
 
     if direction == "BUY":
-        return "\U0001F7E2"
+        return "🟢"
 
     if direction == "SELL":
-        return "\U0001F534"
+        return "🔴"
 
-    return "\u26AA"
+    return "⚪"
 
 
 # =====================================================
@@ -53,27 +53,42 @@ def clean_symbol(symbol: str) -> str:
 
 def format_signal(signal: dict) -> str:
 
-    symbol = signal.get("symbol") or signal.get("pair")
-    direction = signal.get("direction") or signal.get("side") or ""
+    symbol = signal.get("symbol") or signal.get("pair") or "UNKNOWN"
     target = signal.get("tp", signal.get("tp1", signal.get("tp2")))
+
+    direction = (
+        signal.get("direction")
+        or signal.get("side")
+        or ""
+    )
+
     symbol = clean_symbol(symbol)
 
     return (
-        "\U0001F6A8 *BLISSFINITY SIGNAL*\n\n"
-        "\U0001F4C8 *Pair*\n"
+        "🚨 *BLISSFINITY SIGNAL*\n\n"
+
+        "📈 *Pair*\n"
         f"`{symbol}`\n\n"
+
         f"{direction_emoji(direction)} *Direction*\n"
         f"{direction}\n\n"
-        "\U0001F3AF *Entry*\n"
+
+        "🎯 *Entry*\n"
         f"`{signal['entry']:.6f}`\n\n"
-        "\U0001F6D1 *Stop Loss*\n"
+
+        "🛑 *Stop Loss*\n"
         f"`{signal['stop_loss']:.6f}`\n\n"
-        "\U0001F3AF *Take Profit*\n"
-        f"`{target:.6f}`\n\n"
-        "\u2696\uFE0F *Risk : Reward*\n"
+
+        "🎯 *Take Profit*\n"
+        f"`{float(target):.6f}`\n\n"
+
+        "⚖️ *Risk : Reward*\n"
         f"1 : {signal.get('rr', 2)}\n\n"
 
-        f"\U0001F552 {utc_time()}"
+        "📊 *Confidence*\n"
+        f"{signal.get('confidence', 80)}%\n\n"
+
+        f"🕒 {utc_time()}"
     )
 
 
@@ -81,21 +96,13 @@ def format_signal(signal: dict) -> str:
 # ENTRY
 # =====================================================
 
-def format_entry(
-    symbol: str,
-    direction: str,
-) -> str:
-
-    symbol = clean_symbol(symbol)
-
+def format_entry(symbol: str, direction: str) -> str:
+    symbol = clean_symbol(symbol) or "UNKNOWN"
+    direction = str(direction or "UNKNOWN").upper()
     return (
-        "ðŸŸ¢ *ENTRY HIT*\n\n"
-
-        f"ðŸ“ˆ Pair: `{symbol}`\n"
-
-        f"{direction_emoji(direction)} "
-        f"Direction: *{direction}*\n\n"
-
+        "\U0001F7E2 *ENTRY HIT*\n\n"
+        f"\U0001F4C8 Pair: `{symbol}`\n"
+        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
         "Trade is now ACTIVE."
     )
 
@@ -104,20 +111,15 @@ def format_entry(
 # TAKE PROFIT
 # =====================================================
 
-def format_tp(
-    symbol: str,
-    direction: str,
-    rr: str = "2R",
-) -> str:
+def format_tp(symbol: str, direction: str, rr: str = "2R") -> str:
     """Format the single final take-profit notification."""
-
-    symbol = clean_symbol(symbol)
-
+    symbol = clean_symbol(symbol) or "UNKNOWN"
+    direction = str(direction or "UNKNOWN").upper()
     return (
-        "ðŸŽ¯ *TAKE PROFIT HIT*\n\n"
-        f"ðŸ“ˆ Pair: `{symbol}`\n"
+        "\U0001F3AF *TAKE PROFIT HIT*\n\n"
+        f"\U0001F4C8 Pair: `{symbol}`\n"
         f"{direction_emoji(direction)} Direction: *{direction}*\n"
-        f"âš–ï¸ Reward: *{rr}*\n\n"
+        f"\u2696\uFE0F Reward: *{rr}*\n\n"
         "Trade closed as a win."
     )
 
@@ -126,21 +128,13 @@ def format_tp(
 # STOP LOSS
 # =====================================================
 
-def format_stop(
-    symbol: str,
-    direction: str,
-) -> str:
-
-    symbol = clean_symbol(symbol)
-
+def format_stop(symbol: str, direction: str) -> str:
+    symbol = clean_symbol(symbol) or "UNKNOWN"
+    direction = str(direction or "UNKNOWN").upper()
     return (
-        "ðŸ”´ *STOP LOSS HIT*\n\n"
-
-        f"ðŸ“ˆ Pair: `{symbol}`\n"
-
-        f"{direction_emoji(direction)} "
-        f"Direction: *{direction}*\n\n"
-
+        "\U0001F534 *STOP LOSS HIT*\n\n"
+        f"\U0001F4C8 Pair: `{symbol}`\n"
+        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
         "Trade closed."
     )
 
@@ -149,20 +143,12 @@ def format_stop(
 # BREAKEVEN
 # =====================================================
 
-def format_breakeven(
-    symbol: str,
-    direction: str,
-) -> str:
-
-    symbol = clean_symbol(symbol)
-
+def format_breakeven(symbol: str, direction: str) -> str:
+    symbol = clean_symbol(symbol) or "UNKNOWN"
+    direction = str(direction or "UNKNOWN").upper()
     return (
-        "âšª *BREAKEVEN*\n\n"
-
-        f"ðŸ“ˆ Pair: `{symbol}`\n"
-
-        f"{direction_emoji(direction)} "
-        f"Direction: *{direction}*\n\n"
-
+        "\u26AA *BREAKEVEN*\n\n"
+        f"\U0001F4C8 Pair: `{symbol}`\n"
+        f"{direction_emoji(direction)} Direction: *{direction}*\n\n"
         "Trade closed at break-even."
     )
